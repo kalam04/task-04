@@ -175,7 +175,7 @@ export default function MyDashboard() {
         </Box>
         <Stack direction="row" spacing={1}>
           <Button component={RouterLink} to={`/tasks?developer_id=${user.id}`} endIcon={<ArrowForwardIcon />}>All my tasks</Button>
-          <Tooltip title="All your open tasks with subtasks, estimates and time logs, as one text file">
+          <Tooltip title="Summary of all your open tasks (created time, estimate, time logged, due date) as one text file">
             <span>
               <Button startIcon={<DescriptionOutlinedIcon />} disabled={!tasks?.length}
                 onClick={() => downloadTasks(tasks, user, 'My open tasks').catch((err) => setToast({ message: errorMessage(err), severity: 'error' }))}>

@@ -439,7 +439,7 @@ export default function TaskDetailDialog({ task, tab, onTabChange, isAdmin, canE
         {tab === 'history' && <HistoryTab task={task} />}
       </DialogContent>
       <DialogActions sx={{ justifyContent: 'space-between' }}>
-        <Tooltip title="Task details, estimate, subtasks and time log as a text file">
+        <Tooltip title="Task summary (created time, estimate, time logged…) as a text file">
           <Button startIcon={<DescriptionOutlinedIcon />} onClick={() => downloadTask(task, user).catch((err) => notify(errorMessage(err), 'error'))}>
             Download (.txt)
           </Button>
