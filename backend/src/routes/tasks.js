@@ -240,6 +240,23 @@ tasksRouter.patch('/:id/estimate', (req, res) => {
   res.json(getTask(task.id));
 });
 
+// Quick priority change from the task list (admin only, like the full edit form)
+tasksRouter.patch('/:id/priority', requireAdmin, (req, res) => {
+  const task = getTask(req.params.id);
+  if (!task) return res.status(404).json({ message: 'Task not found' });
+  const { priority } = req.body ?? {};
+  if (!PRIORITIES.includes(priority)) return res.status(400).json({ message: 'Invalid priority' });
+  if (priority !== task.priority) {
+    db.prepare('UPDATE tasks SET priority = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(priority, task.id);
+    logActivity(task.id, req.user.id, `changed priority from ${PRIORITY_LABELS[task.priority]} to ${PRIORITY_LABELS[priority]}`);
+    notify([task.developer_id], {
+      taskId: task.id, actorId: req.user.id, type: 'status',
+      message: `${req.user.name} changed the priority of "${task.title}" to ${PRIORITY_LABELS[priority]}`,
+    });
+  }
+  res.json(getTask(task.id));
+});
+
 // Assign: admins can (re)assign any task; a developer can assign an unassigned task to anyone (incl. themselves)
 tasksRouter.patch('/:id/assign', (req, res) => {
   const task = getTask(req.params.id);

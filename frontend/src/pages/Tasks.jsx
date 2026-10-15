@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   Alert, Box, Button, Card, CardContent, Chip, Dialog, DialogActions, DialogContent, DialogTitle,
-  Grid, IconButton, Menu, MenuItem, Paper, Snackbar, Stack, Table, TableBody, TableCell, TableContainer,
+  Grid, IconButton, ListItemIcon, Menu, MenuItem, Paper, Snackbar, Stack, Table, TableBody, TableCell, TableContainer,
   TableHead, TableRow, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
@@ -16,6 +16,8 @@ import TimerOutlinedIcon from '@mui/icons-material/TimerOutlined';
 import ScheduleIcon from '@mui/icons-material/Schedule';
 import StopIcon from '@mui/icons-material/Stop';
 import ChecklistIcon from '@mui/icons-material/Checklist';
+import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown';
+import CheckIcon from '@mui/icons-material/Check';
 import ChatBubbleOutlineIcon from '@mui/icons-material/ChatBubbleOutlined';
 import PersonAddIcon from '@mui/icons-material/PersonAddAlt1';
 import { api } from '../api/client';
@@ -246,6 +248,7 @@ export default function Tasks() {
   const [detailTask, setDetailTask] = useState(null);
   const [deleting, setDeleting] = useState(null);
   const [statusMenu, setStatusMenu] = useState(null);
+  const [priorityMenu, setPriorityMenu] = useState(null);
   const [assigning, setAssigning] = useState(null);
   const [toast, setToast] = useState(null);
 
@@ -303,6 +306,32 @@ export default function Tasks() {
       notify(errorMessage(err), 'error');
     }
   };
+
+  // Statuses the current user may move a task to (mirrors the server rules)
+  const statusOptions = (t) => {
+    if (isAdmin) return STATUSES.map((s) => s.value);
+    if (!canEdit(t) || ['completed', 'rejected'].includes(t.status)) return [];
+    return ['in_progress', 'completed', 'rejected'];
+  };
+  const canEditEstimate = (t) => canEdit(t) && (isAdmin || !['completed', 'rejected'].includes(t.status));
+
+  const changePriority = async (task, priority) => {
+    try {
+      await api.patch(`/tasks/${task.id}/priority`, { priority });
+      notify(`Priority set to ${byValue(PRIORITIES, priority).label}`);
+      load();
+    } catch (err) {
+      notify(errorMessage(err), 'error');
+    }
+  };
+
+  // A chip that opens a pop-up when the user is allowed to change it
+  const editableChip = (props, onOpen, title) => (onOpen ? (
+    <Tooltip title={title}>
+      <Chip size="small" {...props} onClick={onOpen} onDelete={onOpen} deleteIcon={<ArrowDropDownIcon />}
+        sx={{ cursor: 'pointer', '& .MuiChip-deleteIcon': { mr: 0.25, ml: -0.75 } }} />
+    </Tooltip>
+  ) : <Chip size="small" {...props} />);
 
   const assign = async (developer_id) => {
     try {
@@ -502,10 +531,23 @@ export default function Tasks() {
                       </Typography>
                     ) : <Chip size="small" label="Unassigned" variant="outlined" color="warning" />}
                   </TableCell>
-                  <TableCell><Chip size="small" label={priority.label} color={priority.color} /></TableCell>
-                  <TableCell><Chip size="small" label={status.label} color={status.color} variant="outlined" /></TableCell>
+                  <TableCell>
+                    {editableChip({ label: priority.label, color: priority.color },
+                      isAdmin ? (e) => setPriorityMenu({ anchor: e.currentTarget, task: t }) : null, 'Change priority')}
+                  </TableCell>
+                  <TableCell>
+                    {editableChip({ label: status.label, color: status.color, variant: 'outlined' },
+                      statusOptions(t).length ? (e) => setStatusMenu({ anchor: e.currentTarget, task: t }) : null, 'Change status')}
+                  </TableCell>
                   <TableCell sx={{ whiteSpace: 'nowrap' }}>
-                    {formatEstimate(t) || <Typography variant="body2" color="text.secondary">Not set</Typography>}
+                    {canEditEstimate(t) ? (
+                      <Tooltip title="Change estimate">
+                        <Button size="small" onClick={() => setEstimating(t)} endIcon={<ArrowDropDownIcon />}
+                          sx={{ textTransform: 'none', ml: -1, color: formatEstimate(t) ? 'text.primary' : 'text.secondary', fontWeight: 400 }}>
+                          {formatEstimate(t) || 'Set estimate'}
+                        </Button>
+                      </Tooltip>
+                    ) : formatEstimate(t) || <Typography variant="body2" color="text.secondary">Not set</Typography>}
                   </TableCell>
                   <TableCell sx={{ whiteSpace: 'nowrap' }}><TimeTaken task={t} now={now} /></TableCell>
                   <TableCell><DueDate task={t} /></TableCell>
@@ -521,14 +563,39 @@ export default function Tasks() {
       </TableContainer>
 
       <Menu anchorEl={statusMenu?.anchor} open={!!statusMenu} onClose={() => setStatusMenu(null)}>
-        {STATUSES.map((s) => (
-          <MenuItem key={s.value} disabled={statusMenu?.task.status === s.value} onClick={() => {
-            const task = statusMenu.task;
-            setStatusMenu(null);
-            if (s.value === 'rejected') setRejecting(task);
-            else changeStatus(task, s.value);
-          }}>{s.value === 'pending' ? 'Reopen (Pending)' : s.label}</MenuItem>
-        ))}
+        <MenuItem disabled sx={{ fontSize: 12, opacity: '1 !important', color: 'text.secondary' }}>Change status</MenuItem>
+        {statusMenu && STATUSES.filter((s) => s.value === statusMenu.task.status || statusOptions(statusMenu.task).includes(s.value)).map((s) => {
+          const current = statusMenu.task.status === s.value;
+          return (
+            <MenuItem key={s.value} disabled={current} onClick={() => {
+              const task = statusMenu.task;
+              setStatusMenu(null);
+              if (s.value === 'rejected') setRejecting(task);
+              else changeStatus(task, s.value);
+            }}>
+              <ListItemIcon>{current && <CheckIcon fontSize="small" />}</ListItemIcon>
+              <Chip size="small" variant="outlined" color={s.color} sx={{ cursor: 'inherit' }}
+                label={s.value === 'pending' && !current ? 'Reopen (Pending)' : s.label} />
+            </MenuItem>
+          );
+        })}
+      </Menu>
+
+      <Menu anchorEl={priorityMenu?.anchor} open={!!priorityMenu} onClose={() => setPriorityMenu(null)}>
+        <MenuItem disabled sx={{ fontSize: 12, opacity: '1 !important', color: 'text.secondary' }}>Change priority</MenuItem>
+        {priorityMenu && [...PRIORITIES].reverse().map((p) => {
+          const current = priorityMenu.task.priority === p.value;
+          return (
+            <MenuItem key={p.value} disabled={current} onClick={() => {
+              const task = priorityMenu.task;
+              setPriorityMenu(null);
+              changePriority(task, p.value);
+            }}>
+              <ListItemIcon>{current && <CheckIcon fontSize="small" />}</ListItemIcon>
+              <Chip size="small" color={p.color} label={p.label} sx={{ cursor: 'inherit' }} />
+            </MenuItem>
+          );
+        })}
       </Menu>
 
       <TaskFormDialog open={formOpen} task={editing} projects={projects} developers={developers}
