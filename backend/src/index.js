@@ -17,6 +17,8 @@ import { reportsRouter } from './routes/reports.js';
 import { adminsRouter } from './routes/admins.js';
 import { dashboardRouter } from './routes/dashboard.js';
 import { filesRouter } from './routes/files.js';
+import { requestsRouter } from './routes/requests.js';
+import { staffRouter } from './routes/staff.js';
 
 const isProduction = process.env.NODE_ENV === 'production';
 if (!process.env.JWT_SECRET || (isProduction && process.env.JWT_SECRET.length < 32)) {
@@ -45,6 +47,8 @@ app.use('/api/dashboard', requireAuth, dashboardRouter);
 app.use('/api/files', filesRouter); // signed links, no login header needed
 app.use('/api/reports', requireAuth, requireAdmin, reportsRouter);
 app.use('/api/admins', requireAuth, requireAdmin, adminsRouter);
+app.use('/api/staff', requireAuth, requireAdmin, staffRouter);
+app.use('/api/assignment-requests', requireAuth, requestsRouter);
 app.use('/api/trash', requireAuth, requireAdmin, trashRouter);
 app.use('/api', (req, res) => res.status(404).json({ message: 'Not found' }));
 

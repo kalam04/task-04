@@ -12,6 +12,8 @@ import EventBusyIcon from '@mui/icons-material/EventBusy';
 import SyncAltIcon from '@mui/icons-material/SyncAlt';
 import AddTaskIcon from '@mui/icons-material/AddTask';
 import AttachFileIcon from '@mui/icons-material/AttachFile';
+import HowToRegIcon from '@mui/icons-material/HowToReg';
+import PersonOffIcon from '@mui/icons-material/PersonOff';
 import { api } from '../api/client';
 import { timeAgo } from './constants';
 
@@ -24,6 +26,10 @@ const ICONS = {
   status: <SyncAltIcon color="action" />,
   created: <AddTaskIcon color="primary" />,
   attachment: <AttachFileIcon color="action" />,
+  request: <HowToRegIcon color="warning" />,
+  request_accepted: <HowToRegIcon color="success" />,
+  request_declined: <PersonOffIcon color="error" />,
+  request_cancelled: <PersonOffIcon color="action" />,
 };
 
 const POLL_MS = 30000;

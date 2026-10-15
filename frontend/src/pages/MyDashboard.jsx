@@ -9,6 +9,8 @@ import StopIcon from '@mui/icons-material/Stop';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 import AddIcon from '@mui/icons-material/Add';
 import { api } from '../api/client';
+import { DeclineRequestDialog, respondToRequest } from '../components/Requests';
+import HowToRegIcon from '@mui/icons-material/HowToReg';
 import { useAuth } from '../context/AuthContext';
 import {
   PRIORITIES, STATUSES, byValue, dueState, errorMessage, estimateSeconds, formatDuration, projectColorFn, timeAgo,
@@ -108,6 +110,8 @@ export default function MyDashboard() {
   const [tasks, setTasks] = useState(null);
   const [projects, setProjects] = useState([]);
   const [toast, setToast] = useState(null);
+  const [requests, setRequests] = useState([]);
+  const [declining, setDeclining] = useState(null);
 
   const running = tasks?.find((t) => t.running_since);
   const now = useNow(!!running, 1000);
@@ -120,6 +124,7 @@ export default function MyDashboard() {
     api.get('/dashboard/me', { params: { today: t.toISOString(), week: startOfWeek(t).toISOString() } })
       .then((r) => setSummary({ ...r.data, fetchedAt: Date.now() }));
     api.get('/tasks', { params: { developer_id: user.id, status: 'open' } }).then((r) => setTasks(r.data));
+    api.get('/assignment-requests').then((r) => setRequests(r.data));
   }, [user.id]);
   useEffect(() => { load(); }, [load]);
   useEffect(() => { api.get('/projects').then((r) => setProjects(r.data)); }, []);
@@ -130,6 +135,15 @@ export default function MyDashboard() {
     try {
       await api.post(`/tasks/${task.id}/timer/${action}`);
       setToast({ message: action === 'start' ? `Timer started: ${task.title}` : 'Timer stopped', severity: 'success' });
+      load();
+    } catch (err) {
+      setToast({ message: errorMessage(err), severity: 'error' });
+    }
+  };
+
+  const answer = async (r, action, reason) => {
+    try {
+      setToast({ message: await respondToRequest(r.id, action, reason), severity: 'success' });
       load();
     } catch (err) {
       setToast({ message: errorMessage(err), severity: 'error' });
@@ -162,6 +176,31 @@ export default function MyDashboard() {
           <Button component={RouterLink} to="/tasks?new=1" variant="outlined" startIcon={<AddIcon />}>New task</Button>
         </Stack>
       </Stack>
+
+      {requests.length > 0 && (
+        <Paper variant="outlined" sx={{ mb: 2, borderColor: 'warning.main', borderWidth: 2 }}>
+          <Stack direction="row" spacing={1} sx={{ p: 2, pb: 1, alignItems: 'center' }}>
+            <HowToRegIcon color="warning" />
+            <Typography fontWeight={600}>{requests.length} request{requests.length === 1 ? '' : 's'} waiting for you</Typography>
+          </Stack>
+          <List disablePadding>
+            {requests.map((r) => (
+              <ListItem key={r.id} divider sx={{ flexWrap: 'wrap', gap: 1 }}>
+                <ListItemText sx={{ minWidth: 240 }}
+                  primary={<Link component={RouterLink} to={`/tasks?task=${r.task_id}&tab=comments`} underline="hover" color="inherit" fontWeight={500}>{r.task_title}</Link>}
+                  secondary={<>
+                    {r.requested_by_name} asked you · {r.project_name} · {byValue(PRIORITIES, r.priority).label} priority{r.due_date ? ` · due ${r.due_date}` : ''} · {timeAgo(r.created_at)}
+                    {r.message && <span style={{ display: 'block', fontStyle: 'italic' }}>“{r.message}”</span>}
+                  </>} />
+                <Stack direction="row" spacing={1}>
+                  <Button size="small" variant="contained" color="success" onClick={() => answer(r, 'accept')}>Accept</Button>
+                  <Button size="small" color="error" onClick={() => setDeclining({ ...r, title: r.task_title })}>Decline</Button>
+                </Stack>
+              </ListItem>
+            ))}
+          </List>
+        </Paper>
+      )}
 
       {/* What I'm working on right now */}
       <Paper variant="outlined" sx={{ p: 2, mb: 2, borderColor: running ? 'primary.main' : undefined, borderWidth: running ? 2 : 1 }}>
@@ -341,6 +380,8 @@ export default function MyDashboard() {
         </Alert>
       )}
 
+      <DeclineRequestDialog request={declining} onClose={() => setDeclining(null)}
+        onConfirm={(reason) => { answer(declining, 'decline', reason); setDeclining(null); }} />
       <Snackbar open={!!toast} autoHideDuration={3000} onClose={() => setToast(null)} anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}>
         {toast && <Alert severity={toast.severity} variant="filled" onClose={() => setToast(null)}>{toast.message}</Alert>}
       </Snackbar>

@@ -22,8 +22,11 @@ import ChatBubbleOutlineIcon from '@mui/icons-material/ChatBubbleOutlined';
 import PersonAddIcon from '@mui/icons-material/PersonAddAlt1';
 import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext';
-import { PRIORITIES, STATUSES, byValue, dueState, errorMessage, formatDuration, formatEstimate } from '../components/constants';
+import { PRIORITIES, STATUSES, byValue, dueState, errorMessage, formatDuration, formatEstimate, isStaffRole } from '../components/constants';
 import TaskDetailDialog from '../components/TaskDetailDialog';
+import { DeclineRequestDialog, RequestDeveloperDialog, respondToRequest } from '../components/Requests';
+import HowToRegIcon from '@mui/icons-material/HowToReg';
+import PersonSearchIcon from '@mui/icons-material/PersonSearch';
 import { FileDropZone, PendingFiles, formatBytes, uploadFiles } from '../components/Attachments';
 import AttachFileIcon from '@mui/icons-material/AttachFile';
 import TaskAltIcon from '@mui/icons-material/TaskAlt';
@@ -33,7 +36,7 @@ import ConfirmDialog from '../components/ConfirmDialog';
 const emptyTask = { title: '', description: '', project_id: '', client_id: '', developer_id: '', priority: 'medium', due_date: '' };
 
 // Developers create tasks too (assigned to themselves by default); when editing they can't reassign
-function TaskFormDialog({ open, task, projects, developers, isAdmin, userId, onClose, onSaved }) {
+function TaskFormDialog({ open, task, projects, developers, isAdmin, isStaff, userId, onClose, onSaved }) {
   const [form, setForm] = useState(emptyTask);
   const [clients, setClients] = useState([]);
   const [error, setError] = useState('');
@@ -47,8 +50,8 @@ function TaskFormDialog({ open, task, projects, developers, isAdmin, userId, onC
     setUploading(null);
     setForm(task ? {
       ...emptyTask, ...Object.fromEntries(Object.keys(emptyTask).map((k) => [k, task[k] ?? ''])),
-    } : { ...emptyTask, developer_id: isAdmin ? '' : userId });
-  }, [open, task, isAdmin, userId]);
+    } : { ...emptyTask, developer_id: isAdmin || isStaff ? '' : userId, request_developer_id: '', request_message: '' });
+  }, [open, task, isAdmin, isStaff, userId]);
 
   useEffect(() => {
     if (!form.project_id) return setClients([]);
@@ -63,13 +66,14 @@ function TaskFormDialog({ open, task, projects, developers, isAdmin, userId, onC
     setError('');
     try {
       const payload = { ...form };
-      for (const k of ['client_id', 'developer_id', 'due_date']) if (!payload[k]) payload[k] = null;
+      for (const k of ['client_id', 'developer_id', 'due_date', 'request_developer_id']) if (!payload[k]) payload[k] = null;
       if (task) {
         await api.put(`/tasks/${task.id}`, payload);
         onSaved('Task updated');
         return;
       }
       const { data: created } = await api.post('/tasks', payload);
+      if (created.request_error) setError(`Task created, but the developer request failed: ${created.request_error}`);
       // Then upload attachments: regular files together, each voice note on its own
       const files = pending.filter((p) => !p.voice).map((p) => p.file);
       const voices = pending.filter((p) => p.voice).map((p) => p.file);
@@ -115,16 +119,28 @@ function TaskFormDialog({ open, task, projects, developers, isAdmin, userId, onC
             </TextField>
           </Stack>
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+            {isStaff && !task ? (
+              <TextField select label="Request a developer (optional)" fullWidth value={form.request_developer_id ?? ''}
+                onChange={set('request_developer_id')} helperText="They'll be asked to accept or decline">
+                <MenuItem value=""><em>No request — leave unassigned</em></MenuItem>
+                {developers.map((d) => <MenuItem key={d.id} value={d.id}>{d.name} ({d.username})</MenuItem>)}
+              </TextField>
+            ) : (
             <TextField select label="Assign to developer" fullWidth value={form.developer_id} onChange={set('developer_id')}
               disabled={!isAdmin && !!task} helperText={!isAdmin && task ? 'Only an admin can reassign a task' : ' '}>
               <MenuItem value=""><em>Unassigned</em></MenuItem>
               {developers.map((d) => <MenuItem key={d.id} value={d.id}>{d.name} ({d.username}){d.id === userId ? ' — you' : ''}</MenuItem>)}
               {task?.developer_deleted && <MenuItem value={task.developer_id}>{task.developer_name} (deleted)</MenuItem>}
             </TextField>
+            )}
             <TextField select label="Priority" fullWidth value={form.priority} onChange={set('priority')}>
               {PRIORITIES.map((p) => <MenuItem key={p.value} value={p.value}>{p.label}</MenuItem>)}
             </TextField>
           </Stack>
+          {isStaff && !task && form.request_developer_id && (
+            <TextField label="Note for the developer (optional)" multiline minRows={2} value={form.request_message ?? ''}
+              onChange={set('request_message')} placeholder="Why them, deadline, context…" />
+          )}
           <TextField label="Due date" type="date" value={form.due_date} onChange={set('due_date')}
             slotProps={{ inputLabel: { shrink: true } }} />
           {!task && (
@@ -275,7 +291,7 @@ function AssignDialog({ task, developers, defaultId, onClose, onSave }) {
   );
 }
 
-const FILTER_KEYS = ['q', 'project_id', 'developer_id', 'status', 'priority'];
+const FILTER_KEYS = ['q', 'project_id', 'developer_id', 'status', 'priority', 'created_by'];
 
 export default function Tasks() {
   const { user } = useAuth();
@@ -318,11 +334,16 @@ export default function Tasks() {
   const [statusMenu, setStatusMenu] = useState(null);
   const [priorityMenu, setPriorityMenu] = useState(null);
   const [assigning, setAssigning] = useState(null);
+  const [requesting, setRequesting] = useState(null);
+  const [declining, setDeclining] = useState(null);
   const [toast, setToast] = useState(null);
 
   const params = useMemo(() => Object.fromEntries(Object.entries(filters).filter(([, v]) => v)), [filters]);
   // Everyone sees every task, but only the assignee (or an admin) can change it
   const canEdit = (t) => isAdmin || t.developer_id === user.id;
+  const isStaff = isStaffRole(user.role);
+  // Task details (title, description, priority, due date…): admins, Marketing/Support, and the assignee
+  const canEditDetails = (t) => isAdmin || isStaff || (t.developer_id === user.id && !['completed', 'rejected'].includes(t.status));
 
   const anyRunning = tasks.some((t) => t.running_since);
   const now = useNow(anyRunning);
@@ -412,6 +433,15 @@ export default function Tasks() {
     </Tooltip>
   ) : <Chip size="small" {...props} />);
 
+  const requestAction = async (t, action, reason) => {
+    try {
+      notify(await respondToRequest(t.request_id, action, reason));
+      load();
+    } catch (err) {
+      notify(errorMessage(err), 'error');
+    }
+  };
+
   const assign = async (developer_id) => {
     try {
       await api.patch(`/tasks/${assigning.id}/assign`, { developer_id });
@@ -457,11 +487,31 @@ export default function Tasks() {
     </Tooltip>
   );
 
+  // A request waiting for me: accept or decline right from the row
+  const requestButtons = (t) => (
+    <>
+      <Tooltip title="Accept — assign it to me"><IconButton size="small" color="success" onClick={() => requestAction(t, 'accept')}><HowToRegIcon /></IconButton></Tooltip>
+      <Tooltip title="Decline request"><IconButton size="small" color="error" onClick={() => setDeclining(t)}><CancelIcon /></IconButton></Tooltip>
+    </>
+  );
+
   // Someone else's task: view only
   const viewActions = (t) => (
     <Stack direction="row" spacing={0.5} sx={{ justifyContent: 'flex-end', alignItems: 'center' }}>
-      {!t.developer_id && assignButton(t)}
+      {t.request_developer_id === user.id && requestButtons(t)}
+      {!t.developer_id && !t.request_id && assignButton(t)}
       {detailButtons(t)}
+    </Stack>
+  );
+
+  // Marketing / Support: request a developer, edit details, discuss
+  const staffActions = (t) => (
+    <Stack direction="row" spacing={0.5} sx={{ justifyContent: 'flex-end', alignItems: 'center' }}>
+      {!t.developer_id && !t.request_id && ['pending', 'in_progress'].includes(t.status) && (
+        <Tooltip title="Request a developer"><IconButton size="small" color="primary" onClick={() => setRequesting(t)}><PersonSearchIcon /></IconButton></Tooltip>
+      )}
+      {detailButtons(t)}
+      <Tooltip title="Edit"><IconButton size="small" onClick={() => { setEditing(t); setFormOpen(true); }}><EditIcon /></IconButton></Tooltip>
     </Stack>
   );
 
@@ -484,7 +534,7 @@ export default function Tasks() {
 
   const adminActions = (t) => (
     <Stack direction="row" spacing={0.5} sx={{ justifyContent: 'flex-end' }}>
-      {!t.developer_id && assignButton(t)}
+      {!t.developer_id && !t.request_id && assignButton(t)}
       {t.running_since && timerButton(t)}
       {detailButtons(t)}
       <Tooltip title="Set time estimate"><IconButton size="small" onClick={() => setEstimating(t)}><TimerOutlinedIcon /></IconButton></Tooltip>
@@ -508,7 +558,19 @@ export default function Tasks() {
         </Alert>
       )}
 
-      {!isAdmin && (
+      {isStaff && (
+        <ToggleButtonGroup exclusive size="small" color="primary" sx={{ mb: 2 }}
+          value={filters.created_by === String(user.id) ? 'mine' : filters.developer_id === 'none' ? 'none' : 'all'}
+          onChange={(e, v) => v && setFilters((f) => ({
+            ...f, created_by: v === 'mine' ? String(user.id) : '', developer_id: v === 'none' ? 'none' : '',
+          }))}>
+          <ToggleButton value="mine">Created by me</ToggleButton>
+          <ToggleButton value="all">All tasks</ToggleButton>
+          <ToggleButton value="none">Unassigned</ToggleButton>
+        </ToggleButtonGroup>
+      )}
+
+      {user.role === 'developer' && (
         <ToggleButtonGroup exclusive size="small" color="primary" sx={{ mb: 2 }}
           value={filters.developer_id === String(user.id) ? 'mine' : filters.developer_id === 'none' ? 'none' : filters.developer_id ? 'other' : 'all'}
           onChange={(e, v) => v && v !== 'other' && setFilters((f) => ({ ...f, developer_id: v === 'mine' ? String(user.id) : v === 'none' ? 'none' : '' }))}>
@@ -616,11 +678,17 @@ export default function Tasks() {
                       <Typography variant="body2" fontWeight={t.developer_id === user.id ? 600 : undefined}>
                         {t.developer_name}{t.developer_deleted ? ' (deleted)' : ''}{t.developer_id === user.id ? ' (you)' : ''}
                       </Typography>
+                    ) : t.request_id ? (
+                      <Tooltip title={`Requested by ${t.request_by_name}${t.request_message ? `: “${t.request_message}”` : ''}`}>
+                        <Chip size="small" icon={<HowToRegIcon />} variant="outlined"
+                          color={t.request_developer_id === user.id ? 'warning' : 'info'}
+                          label={t.request_developer_id === user.id ? 'Asked you' : `Asked ${t.request_developer_name}`} />
+                      </Tooltip>
                     ) : <Chip size="small" label="Unassigned" variant="outlined" color="warning" />}
                   </TableCell>
                   <TableCell>
                     {editableChip({ label: priority.label, color: priority.color },
-                      canEditEstimate(t) ? (e) => setPriorityMenu({ anchor: e.currentTarget, task: t }) : null, 'Change priority')}
+                      canEditDetails(t) ? (e) => setPriorityMenu({ anchor: e.currentTarget, task: t }) : null, 'Change priority')}
                   </TableCell>
                   <TableCell>
                     {editableChip({ label: status.label, color: status.color, variant: 'outlined' },
@@ -638,7 +706,7 @@ export default function Tasks() {
                   </TableCell>
                   <TableCell sx={{ whiteSpace: 'nowrap' }}><TimeTaken task={t} now={now} /></TableCell>
                   <TableCell><DueDate task={t} /></TableCell>
-                  <TableCell align="right">{isAdmin ? adminActions(t) : devActions(t)}</TableCell>
+                  <TableCell align="right">{isAdmin ? adminActions(t) : isStaff ? staffActions(t) : devActions(t)}</TableCell>
                 </TableRow>
               );
             })}
@@ -686,7 +754,11 @@ export default function Tasks() {
         })}
       </Menu>
 
-      <TaskFormDialog open={formOpen} task={editing} projects={projects} developers={developers} isAdmin={isAdmin} userId={user.id}
+      <RequestDeveloperDialog task={requesting} developers={developers} onClose={() => setRequesting(null)}
+        onDone={(msg) => { setRequesting(null); notify(msg); load(); }} />
+      <DeclineRequestDialog request={declining} onClose={() => setDeclining(null)}
+        onConfirm={(reason) => { requestAction(declining, 'decline', reason); setDeclining(null); }} />
+      <TaskFormDialog open={formOpen} task={editing} projects={projects} developers={developers} isAdmin={isAdmin} isStaff={isStaff} userId={user.id}
         onClose={() => setFormOpen(false)} onSaved={(msg, severity) => { setFormOpen(false); notify(msg, severity); load(); }} />
       <CompleteDialog task={completing} onClose={() => setCompleting(null)}
         onConfirm={(remarks) => { changeStatus(completing, 'completed', undefined, remarks); setCompleting(null); }} />

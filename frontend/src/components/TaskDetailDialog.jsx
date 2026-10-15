@@ -12,10 +12,11 @@ import StopIcon from '@mui/icons-material/Stop';
 import SendIcon from '@mui/icons-material/Send';
 import { useAuth } from '../context/AuthContext';
 import { FilesTab } from './Attachments';
+import { RequestBanner } from './Requests';
 import { api } from '../api/client';
 import {
-  STATUSES, byValue, errorMessage, formatDateTime, formatDuration, formatEstimate, isoToLocalInput, localInputToIso,
-  timeAgo,
+  ROLE_LABELS, STATUSES, byValue, errorMessage, formatDateTime, formatDuration, formatEstimate, isStaffRole,
+  isoToLocalInput, localInputToIso, timeAgo,
 } from './constants';
 import ConfirmDialog from './ConfirmDialog';
 import useNow, { totalMs } from './useNow';
@@ -385,6 +386,7 @@ function RemarksBox({ task, canEdit, onChanged, notify }) {
 }
 
 export default function TaskDetailDialog({ task, tab, onTabChange, isAdmin, canEdit, onClose, onChanged, notify }) {
+  const { user } = useAuth();
   if (!task) return null;
   const status = byValue(STATUSES, task.status);
   const closed = ['completed', 'rejected'].includes(task.status);
@@ -398,11 +400,19 @@ export default function TaskDetailDialog({ task, tab, onTabChange, isAdmin, canE
             {task.project_name}{task.client_name ? ` · ${task.client_name}` : ''}{task.developer_name ? ` · ${task.developer_name}` : ''}
           </Typography>
         </Stack>
+        {task.created_by_name && (
+          <Typography variant="caption" color="text.secondary" component="div" sx={{ mt: 0.5 }}>
+            Created by {task.created_by_name}{task.created_by_role && task.created_by_role !== 'developer' ? ` (${ROLE_LABELS[task.created_by_role]})` : ''}
+          </Typography>
+        )}
         {task.description && <Typography variant="body2" sx={{ mt: 1 }}>{task.description}</Typography>}
+        <RequestBanner task={task} user={user} onChanged={onChanged} notify={notify} />
         <RemarksBox task={task} canEdit={canEdit} onChanged={onChanged} notify={notify} />
-        {!canEdit && (
+        {!canEdit && task.request_developer_id !== user.id && (
           <Alert severity="info" sx={{ mt: 1.5 }}>
-            View only — {task.developer_name ? `assigned to ${task.developer_name}` : 'assign this task to make changes'}. You can still comment and attach files.
+            {isStaffRole(user.role)
+              ? <>Status, time and subtasks are handled by {task.developer_name ?? 'the assigned developer'}. You can edit the details (Edit in the list), comment and attach files.</>
+              : <>View only — {task.developer_name ? `assigned to ${task.developer_name}` : 'assign this task to make changes'}. You can still comment and attach files.</>}
           </Alert>
         )}
       </DialogTitle>

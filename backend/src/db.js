@@ -192,3 +192,20 @@ db.exec(`
 if (!db.prepare('PRAGMA table_info(tasks)').all().some((c) => c.name === 'completion_remarks')) {
   db.exec('ALTER TABLE tasks ADD COLUMN completion_remarks TEXT');
 }
+
+// Marketing/Support can ask a developer to take a task; the developer accepts or declines
+db.exec(`
+  CREATE TABLE IF NOT EXISTS assignment_requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    developer_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    requested_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    message TEXT,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','accepted','declined','cancelled')),
+    response TEXT,
+    created_at TEXT NOT NULL,
+    responded_at TEXT
+  );
+  CREATE INDEX IF NOT EXISTS idx_assignment_requests_task ON assignment_requests(task_id, status);
+  CREATE INDEX IF NOT EXISTS idx_assignment_requests_dev ON assignment_requests(developer_id, status);
+`);

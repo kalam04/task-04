@@ -33,7 +33,10 @@ trashRouter.get('/', (req, res) => {
     SELECT f.id, f.original_name AS name, f.size, f.is_voice, f.deleted_at, t.title AS task_title, t.deleted_at IS NOT NULL AS task_deleted
     FROM task_attachments f JOIN tasks t ON t.id = f.task_id
     WHERE f.deleted_at IS NOT NULL`).all();
-  res.json({ projects, clients, developers, admins, tasks, subtasks, files });
+  const staff = db.prepare(`
+    SELECT id, name, username, role, deleted_at FROM users
+    WHERE role IN ('marketing','support') AND deleted_at IS NOT NULL`).all();
+  res.json({ projects, clients, developers, admins, staff, tasks, subtasks, files });
 });
 
 const notFound = (res) => res.status(404).json({ message: 'Item not found in Trash' });
@@ -100,4 +103,12 @@ trashRouter.post('/files/:id/restore', (req, res) => {
   db.prepare('UPDATE task_attachments SET deleted_at = NULL WHERE id = ?').run(req.params.id);
   logActivity(row.task_id, req.user.id, `restored file "${row.original_name}" from Trash`);
   res.json({ message: 'File restored' });
+});
+
+trashRouter.post('/staff/:id/restore', (req, res) => {
+  const { changes } = db.prepare(
+    `UPDATE users SET deleted_at = NULL WHERE id = ? AND role IN ('marketing','support') AND deleted_at IS NOT NULL`
+  ).run(req.params.id);
+  if (!changes) return notFound(res);
+  res.json({ message: 'Team member restored' });
 });

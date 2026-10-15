@@ -78,3 +78,7 @@ export const projectColorFn = (projects) => {
     return slot >= 0 && slot < PROJECT_COLORS.length ? PROJECT_COLORS[slot] : OTHER_COLOR;
   };
 };
+
+export const ROLE_LABELS = { admin: 'Admin', developer: 'Developer', marketing: 'Marketing', support: 'Support' };
+// Marketing and Support: see and create tasks, edit any task's details, request developers
+export const isStaffRole = (role) => role === 'marketing' || role === 'support';

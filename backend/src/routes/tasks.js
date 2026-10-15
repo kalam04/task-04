@@ -4,6 +4,7 @@ import { requireAdmin } from '../auth.js';
 import { taskDetailsRouter } from './taskDetails.js';
 import { startTimer, stopTimer } from './timer.js';
 import { PRIORITY_LABELS, STATUS_LABELS, adminIds, logActivity, notify } from '../activity.js';
+import { cancelPendingRequests, createRequest } from './requests.js';
 
 export const tasksRouter = Router();
 
@@ -21,11 +22,18 @@ const selectTask = `
     (SELECT COUNT(*) FROM subtasks s WHERE s.task_id = t.id AND s.deleted_at IS NULL) AS subtask_total,
     (SELECT COUNT(*) FROM subtasks s WHERE s.task_id = t.id AND s.deleted_at IS NULL AND s.is_done = 1) AS subtask_done,
     (SELECT COUNT(*) FROM task_comments m WHERE m.task_id = t.id AND m.deleted_at IS NULL) AS comment_count,
-    (SELECT COUNT(*) FROM task_attachments f WHERE f.task_id = t.id AND f.deleted_at IS NULL) AS attachment_count
+    (SELECT COUNT(*) FROM task_attachments f WHERE f.task_id = t.id AND f.deleted_at IS NULL) AS attachment_count,
+    cb.name AS created_by_name, cb.role AS created_by_role,
+    r.id AS request_id, r.developer_id AS request_developer_id, rd.name AS request_developer_name,
+    r.requested_by AS request_by_id, rb.name AS request_by_name, r.message AS request_message, r.created_at AS request_created_at
   FROM tasks t
   JOIN projects p ON p.id = t.project_id
   LEFT JOIN clients c ON c.id = t.client_id
-  LEFT JOIN users d ON d.id = t.developer_id`;
+  LEFT JOIN users d ON d.id = t.developer_id
+  LEFT JOIN users cb ON cb.id = t.created_by
+  LEFT JOIN assignment_requests r ON r.task_id = t.id AND r.status = 'pending'
+  LEFT JOIN users rd ON rd.id = r.developer_id
+  LEFT JOIN users rb ON rb.id = r.requested_by`;
 
 export const getTask = (id) => db.prepare(`${selectTask} WHERE t.id = ? AND t.deleted_at IS NULL`).get(id);
 
@@ -49,6 +57,12 @@ function validateTask(body, current) {
 // Everyone can see every task; only the assigned developer (or an admin) can change one.
 export const canEditTask = (user, task) => user.role === 'admin' || task.developer_id === user.id;
 
+// Marketing and Support: see and create tasks, edit any task's details, request developers
+export const STAFF_ROLES = ['marketing', 'support'];
+export const isStaff = (user) => STAFF_ROLES.includes(user.role);
+// Task details (title, description, project, client, priority, due date)
+const canEditDetails = (user, task) => canEditTask(user, task) || isStaff(user);
+
 function forbidden(res) {
   return res.status(403).json({ message: 'Only the assigned developer or an admin can change this task' });
 }
@@ -57,6 +71,10 @@ function forbidden(res) {
 function buildFilters(query, { withStatus = true } = {}) {
   const where = ['t.deleted_at IS NULL'];
   const params = [];
+  if (query.created_by) {
+    where.push('t.created_by = ?');
+    params.push(query.created_by);
+  }
   if (query.developer_id === 'none') where.push('t.developer_id IS NULL');
   else if (query.developer_id) {
     where.push('t.developer_id = ?');
@@ -110,7 +128,9 @@ tasksRouter.get('/:id', (req, res) => {
 tasksRouter.post('/', (req, res) => {
   const error = validateTask(req.body);
   if (error) return res.status(400).json({ message: error });
-  const { title, description, project_id, client_id, developer_id, priority, due_date } = req.body;
+  const { title, description, project_id, client_id, priority, due_date } = req.body;
+  // Marketing/Support don't assign; they can request a developer instead (below)
+  const developer_id = isStaff(req.user) ? null : req.body.developer_id;
   const { lastInsertRowid } = db.prepare(`
     INSERT INTO tasks (title, description, project_id, client_id, developer_id, priority, due_date, created_by)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
@@ -118,7 +138,7 @@ tasksRouter.post('/', (req, res) => {
     priority || 'medium', due_date || null, req.user.id);
   const task = getTask(lastInsertRowid);
   logActivity(task.id, req.user.id, 'created the task');
-  if (req.user.role === 'developer') {
+  if (req.user.role !== 'admin') {
     notify(adminIds(), {
       taskId: task.id, actorId: req.user.id, type: 'created',
       message: `${req.user.name} created "${task.title}"${task.developer_name ? ` for ${task.developer_name}` : ' (unassigned)'}`,
@@ -131,7 +151,11 @@ tasksRouter.post('/', (req, res) => {
       message: `${req.user.name} assigned you "${task.title}"`,
     });
   }
-  res.status(201).json(task);
+  if (req.body.request_developer_id && !task.developer_id) {
+    const result = createRequest(req.user, task, req.body.request_developer_id, req.body.request_message);
+    if (result.error) return res.status(201).json({ ...getTask(task.id), request_error: result.error });
+  }
+  res.status(201).json(getTask(task.id));
 });
 
 // Admins edit any task; the assigned developer edits their own open task but can't reassign it
@@ -139,11 +163,12 @@ tasksRouter.put('/:id', (req, res) => {
   const current = getTask(req.params.id);
   if (!current) return res.status(404).json({ message: 'Task not found' });
   const isDev = req.user.role === 'developer';
-  if (!canEditTask(req.user, current)) return forbidden(res);
+  if (!canEditDetails(req.user, current)) return forbidden(res);
   if (isDev && ['completed', 'rejected'].includes(current.status)) {
     return res.status(403).json({ message: 'This task is closed; ask an admin to reopen it' });
   }
-  const body = isDev ? { ...req.body, developer_id: current.developer_id } : req.body;
+  // Only admins (re)assign from the edit form
+  const body = req.user.role === 'admin' ? req.body : { ...req.body, developer_id: current.developer_id };
   const error = validateTask(body, current);
   if (error) return res.status(400).json({ message: error });
   const { title, description, project_id, client_id, developer_id, priority, due_date } = body;
@@ -166,10 +191,11 @@ tasksRouter.put('/:id', (req, res) => {
   if ((task.due_date ?? '') !== (current.due_date ?? '')) diffs.push(`changed due date from ${current.due_date ?? 'none'} to ${task.due_date ?? 'none'}`);
   for (const d of diffs) logActivity(task.id, req.user.id, d);
   if (task.developer_id !== current.developer_id) recordAssignment(req, current, task);
-  res.json(task);
+  res.json(getTask(task.id));
 });
 
 function recordAssignment(req, before, task) {
+  if (task.developer_id) cancelPendingRequests(task.id, req.user.id, `assigned directly to ${task.developer_name}`);
   logActivity(task.id, req.user.id, task.developer_id
     ? `${before.developer_id ? 'reassigned' : 'assigned'} it to ${task.developer_name}`
     : `unassigned ${before.developer_name ?? 'the developer'}`);
@@ -281,7 +307,7 @@ tasksRouter.patch('/:id/priority', (req, res) => {
   const task = getTask(req.params.id);
   const isDev = req.user.role === 'developer';
   if (!task) return res.status(404).json({ message: 'Task not found' });
-  if (!canEditTask(req.user, task)) return forbidden(res);
+  if (!canEditDetails(req.user, task)) return forbidden(res);
   if (isDev && ['completed', 'rejected'].includes(task.status)) {
     return res.status(403).json({ message: 'This task is closed; the priority can no longer be changed' });
   }
@@ -290,8 +316,8 @@ tasksRouter.patch('/:id/priority', (req, res) => {
   if (priority !== task.priority) {
     db.prepare('UPDATE tasks SET priority = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(priority, task.id);
     logActivity(task.id, req.user.id, `changed priority from ${PRIORITY_LABELS[task.priority]} to ${PRIORITY_LABELS[priority]}`);
-    // A developer changing priority tells the admins; an admin changing it tells the assignee
-    notify(isDev ? adminIds() : [task.developer_id], {
+    // Tell the admins and the assignee (whoever changed it is skipped)
+    notify([...adminIds(), task.developer_id], {
       taskId: task.id, actorId: req.user.id, type: 'status',
       message: `${req.user.name} changed the priority of "${task.title}" to ${PRIORITY_LABELS[priority]}`,
     });
@@ -304,6 +330,7 @@ tasksRouter.patch('/:id/assign', (req, res) => {
   const task = getTask(req.params.id);
   if (!task) return res.status(404).json({ message: 'Task not found' });
   const developerId = req.body?.developer_id || null;
+  if (isStaff(req.user)) return res.status(403).json({ message: 'Request a developer instead; they can accept or decline' });
   if (req.user.role !== 'admin') {
     if (task.developer_id) return res.status(403).json({ message: 'This task is already assigned; only an admin can reassign it' });
     if (!developerId) return res.status(400).json({ message: 'Choose a developer' });
@@ -319,7 +346,7 @@ tasksRouter.patch('/:id/assign', (req, res) => {
   if (!changes) return res.status(409).json({ message: 'Someone else just assigned this task' });
   const updated = getTask(task.id);
   if (updated.developer_id !== task.developer_id) recordAssignment(req, task, updated);
-  res.json(updated);
+  res.json(getTask(task.id));
 });
 
 // Subtasks and time log live under /tasks/:taskId/...

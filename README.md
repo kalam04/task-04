@@ -15,6 +15,7 @@ The default user is created on first backend start from `DEFAULT_USERNAME` / `DE
 ## Features
 
 - **Roles:** `admin` manages everything. A `developer` can view every task but change only tasks assigned to them; they can assign an unassigned task to themselves or any developer (only admin can reassign an assigned task).
+- **Marketing & Support (`marketing`, `support`):** created by admins on the Marketing & Support page. They see every task, create tasks, edit any task's details (not delete), comment and attach files. They don't assign directly: they **request a developer**, who gets a notification and can **Accept** (the task is assigned to them) or **Decline** with a reason. The requester or an admin can cancel; assigning directly cancels pending requests. Status, time, estimate and subtasks stay with the assignee and admins.
 - **Projects & Clients:** each project has many clients.
 - **Developers:** created by admin with a username/password so they can sign in.
 - **Tasks:** belong to a project, optional client (must be in that project), assigned developer, priority (low/medium/high/urgent), optional due date.
