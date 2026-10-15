@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import express from 'express';
 import cors from 'cors';
-import { authRouter, requireAdmin, requireAuth } from './auth.js';
+import { authRouter, requireAdmin, requireAdminOrStaff, requireAuth } from './auth.js';
 import { seedDefaultUser } from './seed.js';
 import { checkOverdue } from './activity.js';
 import { startAutoBackup } from './backup.js';
@@ -45,7 +45,7 @@ app.use('/api/tasks', requireAuth, tasksRouter);
 app.use('/api/notifications', requireAuth, notificationsRouter);
 app.use('/api/dashboard', requireAuth, dashboardRouter);
 app.use('/api/files', filesRouter); // signed links, no login header needed
-app.use('/api/reports', requireAuth, requireAdmin, reportsRouter);
+app.use('/api/reports', requireAuth, requireAdminOrStaff, reportsRouter); // read-only
 app.use('/api/admins', requireAuth, requireAdmin, adminsRouter);
 app.use('/api/staff', requireAuth, requireAdmin, staffRouter);
 app.use('/api/assignment-requests', requireAuth, requestsRouter);

@@ -7,7 +7,7 @@ import {
 import InsightsIcon from '@mui/icons-material/Insights';
 import DashboardIcon from '@mui/icons-material/Dashboard';
 import CampaignIcon from '@mui/icons-material/Campaign';
-import { ROLE_LABELS } from './constants';
+import { ROLE_LABELS, isStaffRole } from './constants';
 import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings';
 import KeyIcon from '@mui/icons-material/Key';
 import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown';
@@ -36,6 +36,7 @@ export default function Layout() {
   const links = [
     ...(user.role === 'developer' ? [{ to: '/dashboard', label: 'My Dashboard', icon: <DashboardIcon /> }] : []),
     { to: '/tasks', label: 'Tasks', icon: <AssignmentIcon /> },
+    ...(isStaffRole(user.role) ? [{ to: '/reports', label: 'Dashboard & Reports', icon: <InsightsIcon /> }] : []),
     ...(isAdmin ? [
       { to: '/reports', label: 'Dashboard & Reports', icon: <InsightsIcon /> },
       { to: '/projects', label: 'Projects & Clients', icon: <FolderIcon /> },

@@ -18,7 +18,7 @@ function Home() {
   return <Navigate to={user?.role === 'developer' ? '/dashboard' : '/tasks'} replace />;
 }
 
-function ProtectedRoute({ children, adminOnly, developerOnly }) {
+function ProtectedRoute({ children, adminOnly, developerOnly, roles }) {
   const { user, loading } = useAuth();
   if (loading) {
     return <Box sx={{ minHeight: '100vh', display: 'grid', placeItems: 'center' }}><CircularProgress /></Box>;
@@ -26,6 +26,7 @@ function ProtectedRoute({ children, adminOnly, developerOnly }) {
   if (!user) return <Navigate to="/login" replace />;
   if (adminOnly && user.role !== 'admin') return <Navigate to="/" replace />;
   if (developerOnly && user.role !== 'developer') return <Navigate to="/" replace />;
+  if (roles && !roles.includes(user.role)) return <Navigate to="/" replace />;
   return children;
 }
 
@@ -44,7 +45,7 @@ export default function App() {
             <Route path="/trash" element={<ProtectedRoute adminOnly><Trash /></ProtectedRoute>} />
             <Route path="/staff" element={<ProtectedRoute adminOnly><Staff /></ProtectedRoute>} />
             <Route path="/admins" element={<ProtectedRoute adminOnly><Admins /></ProtectedRoute>} />
-            <Route path="/reports" element={<ProtectedRoute adminOnly><Reports /></ProtectedRoute>} />
+            <Route path="/reports" element={<ProtectedRoute roles={['admin', 'marketing', 'support']}><Reports /></ProtectedRoute>} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

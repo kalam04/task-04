@@ -21,6 +21,12 @@ export function requireAuth(req, res, next) {
   }
 }
 
+// Admins plus Marketing & Support (read-only pages such as Dashboard & Reports)
+export function requireAdminOrStaff(req, res, next) {
+  if (!['admin', 'marketing', 'support'].includes(req.user?.role)) return res.status(403).json({ message: 'Not allowed for your role' });
+  next();
+}
+
 export function requireAdmin(req, res, next) {
   if (req.user?.role !== 'admin') return res.status(403).json({ message: 'Admin access required' });
   next();
