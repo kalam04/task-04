@@ -93,8 +93,8 @@ function buildFilters(query, { withStatus = true } = {}) {
     }
   }
   if (query.q) {
-    where.push('(t.title LIKE ? OR t.description LIKE ?)');
-    params.push(`%${query.q}%`, `%${query.q}%`);
+    where.push('(t.title LIKE ? OR t.description LIKE ? OR t.provided_by LIKE ?)');
+    params.push(`%${query.q}%`, `%${query.q}%`, `%${query.q}%`);
   }
   return { where, params };
 }
@@ -118,6 +118,16 @@ tasksRouter.get('/stats', (req, res) => {
   res.json(stats);
 });
 
+// Names already used in "Task provided by", for suggestions in the form
+tasksRouter.get('/provided-by-names', (req, res) => {
+  res.json(db.prepare(`
+    SELECT provided_by AS name, COUNT(*) AS n FROM tasks
+    WHERE provided_by IS NOT NULL AND deleted_at IS NULL
+    GROUP BY provided_by ORDER BY n DESC, provided_by LIMIT 200`).all().map((r) => r.name));
+});
+
+const cleanProvidedBy = (v) => (typeof v === 'string' ? v.trim().replace(/\s+/g, ' ').slice(0, 200) || null : null);
+
 tasksRouter.get('/:id', (req, res) => {
   const task = getTask(req.params.id);
   if (!task) return res.status(404).json({ message: 'Task not found' });
@@ -132,10 +142,10 @@ tasksRouter.post('/', (req, res) => {
   // Marketing/Support don't assign; they can request a developer instead (below)
   const developer_id = isStaff(req.user) ? null : req.body.developer_id;
   const { lastInsertRowid } = db.prepare(`
-    INSERT INTO tasks (title, description, project_id, client_id, developer_id, priority, due_date, created_by)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    INSERT INTO tasks (title, description, project_id, client_id, developer_id, priority, due_date, provided_by, created_by)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(title.trim(), description || null, project_id, client_id || null, developer_id || null,
-    priority || 'medium', due_date || null, req.user.id);
+    priority || 'medium', due_date || null, cleanProvidedBy(req.body.provided_by), req.user.id);
   const task = getTask(lastInsertRowid);
   logActivity(task.id, req.user.id, 'created the task');
   if (req.user.role !== 'admin') {
@@ -174,10 +184,11 @@ tasksRouter.put('/:id', (req, res) => {
   const { title, description, project_id, client_id, developer_id, priority, due_date } = body;
   const { changes } = db.prepare(`
     UPDATE tasks SET title = ?, description = ?, project_id = ?, client_id = ?, developer_id = ?,
-      priority = ?, due_date = ?, updated_at = CURRENT_TIMESTAMP
+      priority = ?, due_date = ?, provided_by = ?, updated_at = CURRENT_TIMESTAMP
     WHERE id = ? AND deleted_at IS NULL`
   ).run(title.trim(), description || null, project_id, client_id || null, developer_id || null,
-    priority || 'medium', due_date || null, req.params.id);
+    priority || 'medium', due_date || null,
+    body.provided_by === undefined ? current.provided_by : cleanProvidedBy(body.provided_by), req.params.id);
   if (!changes) return res.status(404).json({ message: 'Task not found' });
   const task = getTask(req.params.id);
   const diffs = [];
@@ -189,6 +200,9 @@ tasksRouter.put('/:id', (req, res) => {
     diffs.push(`changed priority from ${PRIORITY_LABELS[current.priority]} to ${PRIORITY_LABELS[task.priority]}`);
   }
   if ((task.due_date ?? '') !== (current.due_date ?? '')) diffs.push(`changed due date from ${current.due_date ?? 'none'} to ${task.due_date ?? 'none'}`);
+  if ((task.provided_by ?? '') !== (current.provided_by ?? '')) {
+    diffs.push(task.provided_by ? `set "provided by" to ${task.provided_by}` : 'cleared "provided by"');
+  }
   for (const d of diffs) logActivity(task.id, req.user.id, d);
   if (task.developer_id !== current.developer_id) recordAssignment(req, current, task);
   res.json(getTask(task.id));

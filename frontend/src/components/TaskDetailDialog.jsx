@@ -400,9 +400,10 @@ export default function TaskDetailDialog({ task, tab, onTabChange, isAdmin, canE
             {task.project_name}{task.client_name ? ` · ${task.client_name}` : ''}{task.developer_name ? ` · ${task.developer_name}` : ''}
           </Typography>
         </Stack>
-        {task.created_by_name && (
+        {(task.created_by_name || task.provided_by) && (
           <Typography variant="caption" color="text.secondary" component="div" sx={{ mt: 0.5 }}>
-            Created by {task.created_by_name}{task.created_by_role && task.created_by_role !== 'developer' ? ` (${ROLE_LABELS[task.created_by_role]})` : ''}
+            {task.provided_by && <>Provided by <b>{task.provided_by}</b>{task.created_by_name ? ' · ' : ''}</>}
+            {task.created_by_name && <>Created by {task.created_by_name}{task.created_by_role && task.created_by_role !== 'developer' ? ` (${ROLE_LABELS[task.created_by_role]})` : ''}</>}
           </Typography>
         )}
         {task.description && <Typography variant="body2" sx={{ mt: 1 }}>{task.description}</Typography>}

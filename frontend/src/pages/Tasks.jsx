@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
-  Alert, Box, Button, Card, CardContent, Chip, LinearProgress, Dialog, DialogActions, DialogContent, DialogTitle,
+  Alert, Autocomplete, Box, Button, Card, CardContent, Chip, LinearProgress, Dialog, DialogActions, DialogContent, DialogTitle,
   Grid, IconButton, ListItemIcon, Menu, MenuItem, Paper, Snackbar, Stack, Table, TableBody, TableCell, TableContainer,
   TableHead, TableRow, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography,
 } from '@mui/material';
@@ -33,7 +33,7 @@ import TaskAltIcon from '@mui/icons-material/TaskAlt';
 import useNow, { totalMs } from '../components/useNow';
 import ConfirmDialog from '../components/ConfirmDialog';
 
-const emptyTask = { title: '', description: '', project_id: '', client_id: '', developer_id: '', priority: 'medium', due_date: '' };
+const emptyTask = { title: '', description: '', project_id: '', client_id: '', developer_id: '', priority: 'medium', due_date: '', provided_by: '' };
 
 // Developers create tasks too (assigned to themselves by default); when editing they can't reassign
 function TaskFormDialog({ open, task, projects, developers, isAdmin, isStaff, userId, onClose, onSaved }) {
@@ -41,6 +41,7 @@ function TaskFormDialog({ open, task, projects, developers, isAdmin, isStaff, us
   const [clients, setClients] = useState([]);
   const [error, setError] = useState('');
   const [pending, setPending] = useState([]); // [{ file, voice }] uploaded after the task is created
+  const [providerNames, setProviderNames] = useState([]); // earlier "provided by" names, as suggestions
   const [uploading, setUploading] = useState(null); // percent while uploading
 
   useEffect(() => {
@@ -48,6 +49,7 @@ function TaskFormDialog({ open, task, projects, developers, isAdmin, isStaff, us
     setError('');
     setPending([]);
     setUploading(null);
+    api.get('/tasks/provided-by-names').then((r) => setProviderNames(r.data)).catch(() => {});
     setForm(task ? {
       ...emptyTask, ...Object.fromEntries(Object.keys(emptyTask).map((k) => [k, task[k] ?? ''])),
     } : { ...emptyTask, developer_id: isAdmin || isStaff ? '' : userId, request_developer_id: '', request_message: '' });
@@ -118,6 +120,12 @@ function TaskFormDialog({ open, task, projects, developers, isAdmin, isStaff, us
               )}
             </TextField>
           </Stack>
+          <Autocomplete freeSolo options={providerNames} value={form.provided_by ?? ''}
+            onInputChange={(e, value) => setForm((f) => ({ ...f, provided_by: value }))}
+            renderInput={(params) => (
+              <TextField {...params} label="Task provided by (optional)"
+                helperText="Who gave or asked for this task — any name, e.g. a client contact or manager" />
+            )} />
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
             {isStaff && !task ? (
               <TextField select label="Request a developer (optional)" fullWidth value={form.request_developer_id ?? ''}
@@ -646,6 +654,9 @@ export default function Tasks() {
                     <Typography fontWeight={500} sx={{ cursor: 'pointer', '&:hover': { color: 'primary.main' } }}
                       onClick={() => setDetail({ id: t.id, tab: 'comments' })}>{t.title}</Typography>
                     {t.description && <Typography variant="body2" color="text.secondary" noWrap>{t.description}</Typography>}
+                    {t.provided_by && (
+                      <Typography variant="caption" color="text.secondary" component="div" noWrap>Provided by <b>{t.provided_by}</b></Typography>
+                    )}
                     <Stack direction="row" spacing={0.5} sx={{ mt: 0.5, flexWrap: 'wrap', gap: 0.5 }}>
                       {!!t.subtask_total && (
                         <Chip size="small" variant="outlined" icon={<ChecklistIcon />}

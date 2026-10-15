@@ -209,3 +209,8 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_assignment_requests_task ON assignment_requests(task_id, status);
   CREATE INDEX IF NOT EXISTS idx_assignment_requests_dev ON assignment_requests(developer_id, status);
 `);
+
+// Free-text name of whoever gave/asked for the task (client contact, manager, …) — optional
+if (!db.prepare('PRAGMA table_info(tasks)').all().some((c) => c.name === 'provided_by')) {
+  db.exec('ALTER TABLE tasks ADD COLUMN provided_by TEXT');
+}
