@@ -240,16 +240,22 @@ tasksRouter.patch('/:id/estimate', (req, res) => {
   res.json(getTask(task.id));
 });
 
-// Quick priority change from the task list (admin only, like the full edit form)
-tasksRouter.patch('/:id/priority', requireAdmin, (req, res) => {
+// Quick priority change from the task list: admins, or the assigned developer while the task is open
+tasksRouter.patch('/:id/priority', (req, res) => {
   const task = getTask(req.params.id);
+  const isDev = req.user.role === 'developer';
   if (!task) return res.status(404).json({ message: 'Task not found' });
+  if (!canEditTask(req.user, task)) return forbidden(res);
+  if (isDev && ['completed', 'rejected'].includes(task.status)) {
+    return res.status(403).json({ message: 'This task is closed; the priority can no longer be changed' });
+  }
   const { priority } = req.body ?? {};
   if (!PRIORITIES.includes(priority)) return res.status(400).json({ message: 'Invalid priority' });
   if (priority !== task.priority) {
     db.prepare('UPDATE tasks SET priority = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(priority, task.id);
     logActivity(task.id, req.user.id, `changed priority from ${PRIORITY_LABELS[task.priority]} to ${PRIORITY_LABELS[priority]}`);
-    notify([task.developer_id], {
+    // A developer changing priority tells the admins; an admin changing it tells the assignee
+    notify(isDev ? adminIds() : [task.developer_id], {
       taskId: task.id, actorId: req.user.id, type: 'status',
       message: `${req.user.name} changed the priority of "${task.title}" to ${PRIORITY_LABELS[priority]}`,
     });

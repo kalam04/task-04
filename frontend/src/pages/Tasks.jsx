@@ -313,6 +313,7 @@ export default function Tasks() {
     if (!canEdit(t) || ['completed', 'rejected'].includes(t.status)) return [];
     return ['in_progress', 'completed', 'rejected'];
   };
+  // Priority and estimate: admins always; the assignee while the task is still open
   const canEditEstimate = (t) => canEdit(t) && (isAdmin || !['completed', 'rejected'].includes(t.status));
 
   const changePriority = async (task, priority) => {
@@ -533,7 +534,7 @@ export default function Tasks() {
                   </TableCell>
                   <TableCell>
                     {editableChip({ label: priority.label, color: priority.color },
-                      isAdmin ? (e) => setPriorityMenu({ anchor: e.currentTarget, task: t }) : null, 'Change priority')}
+                      canEditEstimate(t) ? (e) => setPriorityMenu({ anchor: e.currentTarget, task: t }) : null, 'Change priority')}
                   </TableCell>
                   <TableCell>
                     {editableChip({ label: status.label, color: status.color, variant: 'outlined' },
