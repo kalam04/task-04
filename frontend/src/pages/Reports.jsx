@@ -57,25 +57,103 @@ function HoursBar({ seconds, max }) {
   );
 }
 
+const share = (seconds, total) => (total ? (seconds / total) * 100 : 0);
+const pct = (value) => `${value < 10 && value > 0 ? value.toFixed(1) : Math.round(value)}%`;
+
+// Categorical slots (validated: CVD + normal-vision separation on the light surface).
+// A project keeps its color whatever the filters are; projects past the 7th share the "other" gray.
+const PROJECT_COLORS = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#4a3aa7'];
+const OTHER_COLOR = '#9e9d97';
+
+function ProjectShare({ rows, projects }) {
+  const total = rows.reduce((sum, r) => sum + r.seconds, 0);
+  const colorOf = useMemo(() => {
+    const byId = [...projects].sort((a, b) => a.id - b.id);
+    return (id) => {
+      const slot = byId.findIndex((p) => p.id === id);
+      return slot >= 0 && slot < PROJECT_COLORS.length ? PROJECT_COLORS[slot] : OTHER_COLOR;
+    };
+  }, [projects]);
+  const sorted = rows.filter((r) => r.seconds > 0).sort((a, b) => b.seconds - a.seconds);
+  const top = sorted[0];
+
+  return (
+    <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
+      <Stack direction={{ xs: 'column', sm: 'row' }} sx={{ justifyContent: 'space-between', alignItems: { sm: 'baseline' }, mb: 1.5, gap: 0.5 }}>
+        <Typography fontWeight={600}>Time share by project</Typography>
+        {top && (
+          <Typography variant="body2" color="text.secondary">
+            Most time: <b>{top.name}</b> — {pct(share(top.seconds, total))} of {hours(total)} h
+          </Typography>
+        )}
+      </Stack>
+      {!sorted.length ? (
+        <Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>No time logged in this period</Typography>
+      ) : (
+        <>
+          {/* One 100% bar: segment width = share of the period's hours, 2px gaps between segments */}
+          <Box role="img" aria-label={sorted.map((r) => `${r.name} ${pct(share(r.seconds, total))}`).join(', ')}
+            sx={{ display: 'flex', gap: '2px', height: 22, mb: 2, borderRadius: '4px', overflow: 'hidden' }}>
+            {sorted.map((r) => (
+              <Tooltip key={r.id} title={`${r.name}: ${pct(share(r.seconds, total))} · ${hours(r.seconds)} h`} placement="top">
+                <Box sx={{ flexGrow: r.seconds, flexBasis: 0, minWidth: 3, bgcolor: colorOf(r.id), cursor: 'default',
+                  '&:hover': { filter: 'brightness(0.9)' } }} />
+              </Tooltip>
+            ))}
+          </Box>
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                <TableCell>Project</TableCell><TableCell align="right">Share</TableCell>
+                <TableCell align="right">Hours</TableCell><TableCell align="right">Tasks</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {sorted.map((r) => (
+                <TableRow key={r.id} hover>
+                  <TableCell>
+                    <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+                      <Box sx={{ width: 12, height: 12, borderRadius: '3px', bgcolor: colorOf(r.id), flexShrink: 0 }} />
+                      <Typography variant="body2">{r.name}</Typography>
+                    </Stack>
+                  </TableCell>
+                  <TableCell align="right"><Typography variant="body2" fontWeight={600}>{pct(share(r.seconds, total))}</Typography></TableCell>
+                  <TableCell align="right">{hours(r.seconds)} h</TableCell>
+                  <TableCell align="right">{r.tasks_worked}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </>
+      )}
+    </Paper>
+  );
+}
+
 function HoursTable({ title, rows, nameLabel, renderName }) {
   const max = Math.max(0, ...rows.map((r) => r.seconds));
+  const total = rows.reduce((sum, r) => sum + r.seconds, 0);
   return (
     <Paper variant="outlined" sx={{ height: '100%' }}>
       <Typography fontWeight={600} sx={{ p: 2, pb: 1 }}>{title}</Typography>
       <TableContainer>
         <Table size="small">
           <TableHead>
-            <TableRow><TableCell>{nameLabel}</TableCell><TableCell>Hours</TableCell><TableCell align="right">Tasks</TableCell></TableRow>
+            <TableRow>
+              <TableCell>{nameLabel}</TableCell><TableCell>Hours</TableCell>
+              <TableCell align="right">Share</TableCell><TableCell align="right">Tasks</TableCell>
+            </TableRow>
           </TableHead>
           <TableBody>
             {rows.map((r, i) => (
               <TableRow key={i} hover>
                 <TableCell sx={{ maxWidth: 220 }}>{renderName ? renderName(r) : r.name ?? '—'}</TableCell>
-                <TableCell sx={{ width: '55%' }}><HoursBar seconds={r.seconds} max={max} /></TableCell>
+                <TableCell sx={{ width: '50%' }}><HoursBar seconds={r.seconds} max={max} /></TableCell>
+                <TableCell align="right">{pct(share(r.seconds, total))}</TableCell>
                 <TableCell align="right">{r.tasks_worked}</TableCell>
               </TableRow>
             ))}
-            {!rows.length && <TableRow><TableCell colSpan={3} align="center" sx={{ py: 3, color: 'text.secondary' }}>No time logged in this period</TableCell></TableRow>}
+            {!rows.length && <TableRow><TableCell colSpan={4} align="center" sx={{ py: 3, color: 'text.secondary' }}>No time logged in this period</TableCell></TableRow>}
           </TableBody>
         </Table>
       </TableContainer>
@@ -156,12 +234,17 @@ export default function Reports() {
   };
 
   const exportSummary = () => {
+    const group = (label, list, project) => {
+      const total = list.reduce((sum, r) => sum + r.seconds, 0);
+      return list.map((r) => [label, r.name ?? '—', project ? r.project_name : '', hours(r.seconds),
+        share(r.seconds, total).toFixed(1), r.tasks_worked]);
+    };
     const rows = [
-      ...data.byDeveloper.map((r) => ['Developer', r.name ?? '—', '', hours(r.seconds), r.tasks_worked]),
-      ...data.byProject.map((r) => ['Project', r.name, '', hours(r.seconds), r.tasks_worked]),
-      ...data.byClient.map((r) => ['Client', r.name, r.project_name, hours(r.seconds), r.tasks_worked]),
+      ...group('Project', data.byProject),
+      ...group('Developer', data.byDeveloper),
+      ...group('Client', data.byClient, true),
     ];
-    downloadCsv(`hours_summary_${fileSuffix}.csv`, ['Group', 'Name', 'Project', 'Hours', 'Tasks worked on'], rows);
+    downloadCsv(`hours_summary_${fileSuffix}.csv`, ['Group', 'Name', 'Project', 'Hours', 'Share %', 'Tasks worked on'], rows);
   };
 
   return (
@@ -225,6 +308,8 @@ export default function Reports() {
                 color={data.totals.unassigned ? 'warning.main' : undefined} />
             </Grid>
           </Grid>
+
+          <ProjectShare rows={data.byProject} projects={projects} />
 
           <Paper variant="outlined" sx={{ mb: 2 }}>
             <Typography fontWeight={600} sx={{ p: 2, pb: 1 }}>Current workload</Typography>
