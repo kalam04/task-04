@@ -4,6 +4,7 @@
 // Demo developers sign in with their username and the password below.
 import bcrypt from 'bcryptjs';
 import { db, transaction } from './db.js';
+import { logActivity, notify } from './activity.js';
 
 const DEMO_PASSWORD = 'demo1234';
 
@@ -122,6 +123,90 @@ const dateOnly = (days) => new Date(Date.now() + days * D).toISOString().slice(0
 const demoUsernames = DEVELOPERS.map((d) => d.username);
 const demoProjectNames = PROJECTS.map((p) => p.name);
 
+// Marketing & Support demo accounts, with tasks that show the developer-request flow
+const STAFF = [
+  { username: 'sadia', name: 'Sadia Rahman', role: 'marketing' },
+  { username: 'imran', name: 'Imran Hossain', role: 'support' },
+];
+const staffUsernames = STAFF.map((u) => u.username);
+
+// by: staff username · project: index into PROJECTS · request: { dev, message, state }
+const STAFF_TASKS = [
+  {
+    by: 'sadia', project: 0, client: 0, title: 'Eid campaign banner on the homepage', priority: 'high', due: 3,
+    description: 'Full-width banner with countdown timer and "Shop the Eid collection" button. Designs are in the shared drive.',
+    request: { dev: 'nusrat', message: 'Campaign goes live on Monday — can you take this?', state: 'pending' },
+    comment: 'Brand colours: #0B5 green and white. Mobile version is the priority.',
+  },
+  {
+    by: 'sadia', project: 2, client: 1, title: 'Add UTM tracking to signup links', priority: 'medium', due: 10,
+    description: 'All signup links in the newsletter should carry utm_source / utm_medium / utm_campaign.',
+  },
+  {
+    by: 'imran', project: 1, client: 0, title: 'Customer cannot reset password (ticket #4821)', priority: 'urgent', due: 1,
+    description: 'Customer gets "link expired" immediately after requesting a reset. Happens on Android only. Customer phone: Samsung A54.',
+    request: { dev: 'tanvir', message: 'Customer is waiting on the phone line, please check today', state: 'pending' },
+    comment: 'I asked the customer to try again with the latest app version — same error.',
+  },
+  {
+    by: 'imran', project: 2, client: 0, title: 'Export button missing for some users', priority: 'high', due: 5, status: 'in_progress',
+    description: 'Three sales reps report the "Export to Excel" button is not visible on the Leads page.',
+    request: { dev: 'rahim', message: 'Reported by 3 sales reps this morning', state: 'accepted' },
+  },
+];
+
+function addDemoStaff() {
+  const existing = db.prepare(`SELECT username FROM users WHERE username IN (${staffUsernames.map(() => '?').join(',')})`).all(...staffUsernames);
+  if (existing.length) {
+    console.log(`Demo Marketing/Support accounts already present (${existing.map((u) => u.username).join(', ')}).`);
+    return;
+  }
+  const projectIds = PROJECTS.map((p) => db.prepare('SELECT id FROM projects WHERE name = ? AND deleted_at IS NULL').get(p.name)?.id);
+  if (projectIds.some((id) => !id)) {
+    console.log('Demo projects are missing, so no Marketing/Support demo tasks were added.');
+    return;
+  }
+  const devId = (u) => db.prepare(`SELECT id FROM users WHERE username = ? AND role = 'developer' AND deleted_at IS NULL`).get(u)?.id;
+  transaction(() => {
+    const hash = bcrypt.hashSync(DEMO_PASSWORD, 10);
+    const staff = {};
+    for (const u of STAFF) {
+      const id = db.prepare('INSERT INTO users (username, name, password_hash, role) VALUES (?, ?, ?, ?)')
+        .run(u.username, u.name, hash, u.role).lastInsertRowid;
+      staff[u.username] = { id, name: u.name };
+    }
+    for (const t of STAFF_TASKS) {
+      const author = staff[t.by];
+      const clientId = t.client == null ? null
+        : db.prepare('SELECT id FROM clients WHERE project_id = ? AND deleted_at IS NULL ORDER BY id LIMIT 1 OFFSET ?').get(projectIds[t.project], t.client)?.id ?? null;
+      const dev = t.request ? devId(t.request.dev) : null;
+      const assigned = t.request?.state === 'accepted' && dev ? dev : null;
+      const taskId = db.prepare(`
+        INSERT INTO tasks (title, description, project_id, client_id, developer_id, priority, status, due_date, created_by, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).run(t.title, t.description ?? null, projectIds[t.project], clientId, assigned, t.priority, t.status ?? 'pending',
+        dateOnly(t.due), author.id, iso(2 * H)).lastInsertRowid;
+      logActivity(taskId, author.id, 'created the task');
+      if (t.request && dev) {
+        const state = t.request.state;
+        db.prepare(`INSERT INTO assignment_requests (task_id, developer_id, requested_by, message, status, created_at, responded_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?)`).run(taskId, dev, author.id, t.request.message, state, iso(1.5 * H), state === 'pending' ? null : iso(H));
+        logActivity(taskId, author.id, `asked ${DEVELOPERS.find((d) => d.username === t.request.dev).name} to take the task: "${t.request.message}"`);
+        if (state === 'pending') {
+          notify([dev], { taskId, actorId: author.id, type: 'request', message: `${author.name} asked you to take "${t.title}": ${t.request.message}` });
+        } else {
+          logActivity(taskId, dev, 'accepted the request and took the task');
+          notify([author.id], { taskId, actorId: dev, type: 'request_accepted', message: `${DEVELOPERS.find((d) => d.username === t.request.dev).name} accepted "${t.title}" and is now assigned` });
+        }
+      }
+      if (t.comment) {
+        db.prepare('INSERT INTO task_comments (task_id, user_id, body, created_at) VALUES (?, ?, ?, ?)').run(taskId, author.id, t.comment, iso(H));
+      }
+    }
+    console.log(`Added Marketing/Support demo accounts (${staffUsernames.join(', ')}) and ${STAFF_TASKS.length} tasks. Password is DEMO_PASSWORD in src/seedDemo.js.`);
+  });
+}
+
 function removeDemo() {
   transaction(() => {
     const projectIds = db.prepare(`SELECT id FROM projects WHERE name IN (${demoProjectNames.map(() => '?').join(',')})`)
@@ -134,7 +219,13 @@ function removeDemo() {
     const userIds = db.prepare(`SELECT id FROM users WHERE role = 'developer' AND username IN (${demoUsernames.map(() => '?').join(',')})`)
       .all(...demoUsernames).map((r) => r.id);
     for (const id of userIds) db.prepare('DELETE FROM users WHERE id = ?').run(id);
-    console.log(`Removed ${projectIds.length} demo project(s) and ${userIds.length} demo developer(s)`);
+    const staffIds = db.prepare(`SELECT id FROM users WHERE role IN ('marketing','support') AND username IN (${staffUsernames.map(() => '?').join(',')})`)
+      .all(...staffUsernames).map((r) => r.id);
+    for (const id of staffIds) {
+      db.prepare('DELETE FROM assignment_requests WHERE requested_by = ?').run(id);
+      db.prepare('DELETE FROM users WHERE id = ?').run(id);
+    }
+    console.log(`Removed ${projectIds.length} demo project(s), ${userIds.length} demo developer(s) and ${staffIds.length} Marketing/Support account(s)`);
   });
 }
 
@@ -192,4 +283,7 @@ else if (process.env.NODE_ENV === 'production') {
   // Demo developers share a published password, so never create them on a live server
   console.error('Refusing to add demo data with NODE_ENV=production.');
   process.exitCode = 1;
-} else addDemo();
+} else {
+  addDemo();
+  addDemoStaff();
+}
