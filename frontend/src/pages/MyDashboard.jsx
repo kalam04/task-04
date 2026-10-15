@@ -7,6 +7,7 @@ import {
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import StopIcon from '@mui/icons-material/Stop';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
+import AddIcon from '@mui/icons-material/Add';
 import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -156,7 +157,10 @@ export default function MyDashboard() {
             {today.toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
           </Typography>
         </Box>
-        <Button component={RouterLink} to={`/tasks?developer_id=${user.id}`} endIcon={<ArrowForwardIcon />}>All my tasks</Button>
+        <Stack direction="row" spacing={1}>
+          <Button component={RouterLink} to={`/tasks?developer_id=${user.id}`} endIcon={<ArrowForwardIcon />}>All my tasks</Button>
+          <Button component={RouterLink} to="/tasks?new=1" variant="outlined" startIcon={<AddIcon />}>New task</Button>
+        </Stack>
       </Stack>
 
       {/* What I'm working on right now */}

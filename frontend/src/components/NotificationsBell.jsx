@@ -10,6 +10,7 @@ import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutlined';
 import HighlightOffIcon from '@mui/icons-material/HighlightOff';
 import EventBusyIcon from '@mui/icons-material/EventBusy';
 import SyncAltIcon from '@mui/icons-material/SyncAlt';
+import AddTaskIcon from '@mui/icons-material/AddTask';
 import { api } from '../api/client';
 import { timeAgo } from './constants';
 
@@ -20,6 +21,7 @@ const ICONS = {
   rejected: <HighlightOffIcon color="error" />,
   overdue: <EventBusyIcon color="warning" />,
   status: <SyncAltIcon color="action" />,
+  created: <AddTaskIcon color="primary" />,
 };
 
 const POLL_MS = 30000;

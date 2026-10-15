@@ -29,7 +29,8 @@ import ConfirmDialog from '../components/ConfirmDialog';
 
 const emptyTask = { title: '', description: '', project_id: '', client_id: '', developer_id: '', priority: 'medium', due_date: '' };
 
-function TaskFormDialog({ open, task, projects, developers, onClose, onSaved }) {
+// Developers create tasks too (assigned to themselves by default); when editing they can't reassign
+function TaskFormDialog({ open, task, projects, developers, isAdmin, userId, onClose, onSaved }) {
   const [form, setForm] = useState(emptyTask);
   const [clients, setClients] = useState([]);
   const [error, setError] = useState('');
@@ -39,8 +40,8 @@ function TaskFormDialog({ open, task, projects, developers, onClose, onSaved }) 
     setError('');
     setForm(task ? {
       ...emptyTask, ...Object.fromEntries(Object.keys(emptyTask).map((k) => [k, task[k] ?? ''])),
-    } : emptyTask);
-  }, [open, task]);
+    } : { ...emptyTask, developer_id: isAdmin ? '' : userId });
+  }, [open, task, isAdmin, userId]);
 
   useEffect(() => {
     if (!form.project_id) return setClients([]);
@@ -86,9 +87,10 @@ function TaskFormDialog({ open, task, projects, developers, onClose, onSaved }) 
             </TextField>
           </Stack>
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-            <TextField select label="Assign to developer" fullWidth value={form.developer_id} onChange={set('developer_id')}>
+            <TextField select label="Assign to developer" fullWidth value={form.developer_id} onChange={set('developer_id')}
+              disabled={!isAdmin && !!task} helperText={!isAdmin && task ? 'Only an admin can reassign a task' : ' '}>
               <MenuItem value=""><em>Unassigned</em></MenuItem>
-              {developers.map((d) => <MenuItem key={d.id} value={d.id}>{d.name} ({d.username})</MenuItem>)}
+              {developers.map((d) => <MenuItem key={d.id} value={d.id}>{d.name} ({d.username}){d.id === userId ? ' — you' : ''}</MenuItem>)}
               {task?.developer_deleted && <MenuItem value={task.developer_id}>{task.developer_name} (deleted)</MenuItem>}
             </TextField>
             <TextField select label="Priority" fullWidth value={form.priority} onChange={set('priority')}>
@@ -269,6 +271,16 @@ export default function Tasks() {
   }, [params, detailId]);
 
   useEffect(() => { load(); }, [load]);
+
+  // /tasks?new=1 (e.g. from My Dashboard) opens the New Task form
+  useEffect(() => {
+    if (!searchParams.get('new')) return;
+    setEditing(null);
+    setFormOpen(true);
+    const p = new URLSearchParams(searchParams);
+    p.delete('new');
+    setSearchParams(p, { replace: true });
+  }, [searchParams, setSearchParams]);
   useEffect(() => {
     api.get('/projects').then((r) => { setProjects(r.data); setProjectsLoaded(true); });
     api.get('/developers').then((r) => setDevelopers(r.data));
@@ -397,6 +409,7 @@ export default function Tasks() {
         {timerButton(t)}
         {detailButtons(t)}
         <Tooltip title="Set time estimate"><IconButton size="small" onClick={() => setEstimating(t)}><TimerOutlinedIcon /></IconButton></Tooltip>
+        <Tooltip title="Edit"><IconButton size="small" onClick={() => { setEditing(t); setFormOpen(true); }}><EditIcon /></IconButton></Tooltip>
         <Tooltip title="Mark complete"><IconButton size="small" color="success" onClick={() => changeStatus(t, 'completed')}><CheckCircleIcon /></IconButton></Tooltip>
         <Tooltip title="Reject"><IconButton size="small" color="error" onClick={() => setRejecting(t)}><CancelIcon /></IconButton></Tooltip>
       </Stack>
@@ -419,14 +432,14 @@ export default function Tasks() {
     <Box>
       <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
         <Typography variant="h5" fontWeight={600}>Tasks</Typography>
-        {isAdmin && (
-          <Button variant="contained" startIcon={<AddIcon />} onClick={() => { setEditing(null); setFormOpen(true); }}
-            disabled={!projects.length}>New Task</Button>
-        )}
+        <Button variant="contained" startIcon={<AddIcon />} onClick={() => { setEditing(null); setFormOpen(true); }}
+          disabled={!projects.length}>New Task</Button>
       </Stack>
 
-      {isAdmin && projectsLoaded && !projects.length && (
-        <Alert severity="info" sx={{ mb: 2 }}>Create a project first (Projects &amp; Clients), then add tasks.</Alert>
+      {projectsLoaded && !projects.length && (
+        <Alert severity="info" sx={{ mb: 2 }}>
+          {isAdmin ? 'Create a project first (Projects & Clients), then add tasks.' : 'There are no projects yet. Ask an admin to create one before adding tasks.'}
+        </Alert>
       )}
 
       {!isAdmin && (
@@ -599,7 +612,7 @@ export default function Tasks() {
         })}
       </Menu>
 
-      <TaskFormDialog open={formOpen} task={editing} projects={projects} developers={developers}
+      <TaskFormDialog open={formOpen} task={editing} projects={projects} developers={developers} isAdmin={isAdmin} userId={user.id}
         onClose={() => setFormOpen(false)} onSaved={(msg) => { setFormOpen(false); notify(msg); load(); }} />
       <RejectDialog task={rejecting} onClose={() => setRejecting(null)}
         onConfirm={(reason) => { changeStatus(rejecting, 'rejected', reason); setRejecting(null); }} />

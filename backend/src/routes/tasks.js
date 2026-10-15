@@ -105,7 +105,8 @@ tasksRouter.get('/:id', (req, res) => {
   res.json(task);
 });
 
-tasksRouter.post('/', requireAdmin, (req, res) => {
+// Admins and developers can create tasks; a developer's new task defaults to themselves in the UI
+tasksRouter.post('/', (req, res) => {
   const error = validateTask(req.body);
   if (error) return res.status(400).json({ message: error });
   const { title, description, project_id, client_id, developer_id, priority, due_date } = req.body;
@@ -116,6 +117,12 @@ tasksRouter.post('/', requireAdmin, (req, res) => {
     priority || 'medium', due_date || null, req.user.id);
   const task = getTask(lastInsertRowid);
   logActivity(task.id, req.user.id, 'created the task');
+  if (req.user.role === 'developer') {
+    notify(adminIds(), {
+      taskId: task.id, actorId: req.user.id, type: 'created',
+      message: `${req.user.name} created "${task.title}"${task.developer_name ? ` for ${task.developer_name}` : ' (unassigned)'}`,
+    });
+  }
   if (task.developer_id) {
     logActivity(task.id, req.user.id, `assigned it to ${task.developer_name}`);
     notify([task.developer_id], {
@@ -126,12 +133,19 @@ tasksRouter.post('/', requireAdmin, (req, res) => {
   res.status(201).json(task);
 });
 
-tasksRouter.put('/:id', requireAdmin, (req, res) => {
+// Admins edit any task; the assigned developer edits their own open task but can't reassign it
+tasksRouter.put('/:id', (req, res) => {
   const current = getTask(req.params.id);
   if (!current) return res.status(404).json({ message: 'Task not found' });
-  const error = validateTask(req.body, current);
+  const isDev = req.user.role === 'developer';
+  if (!canEditTask(req.user, current)) return forbidden(res);
+  if (isDev && ['completed', 'rejected'].includes(current.status)) {
+    return res.status(403).json({ message: 'This task is closed; ask an admin to reopen it' });
+  }
+  const body = isDev ? { ...req.body, developer_id: current.developer_id } : req.body;
+  const error = validateTask(body, current);
   if (error) return res.status(400).json({ message: error });
-  const { title, description, project_id, client_id, developer_id, priority, due_date } = req.body;
+  const { title, description, project_id, client_id, developer_id, priority, due_date } = body;
   const { changes } = db.prepare(`
     UPDATE tasks SET title = ?, description = ?, project_id = ?, client_id = ?, developer_id = ?,
       priority = ?, due_date = ?, updated_at = CURRENT_TIMESTAMP
