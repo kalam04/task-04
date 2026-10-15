@@ -10,6 +10,8 @@ import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 import AddIcon from '@mui/icons-material/Add';
 import { api } from '../api/client';
 import { DeclineRequestDialog, respondToRequest } from '../components/Requests';
+import { downloadTasks } from '../components/exportTask';
+import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
 import HowToRegIcon from '@mui/icons-material/HowToReg';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -173,6 +175,14 @@ export default function MyDashboard() {
         </Box>
         <Stack direction="row" spacing={1}>
           <Button component={RouterLink} to={`/tasks?developer_id=${user.id}`} endIcon={<ArrowForwardIcon />}>All my tasks</Button>
+          <Tooltip title="All your open tasks with subtasks, estimates and time logs, as one text file">
+            <span>
+              <Button startIcon={<DescriptionOutlinedIcon />} disabled={!tasks?.length}
+                onClick={() => downloadTasks(tasks, user, 'My open tasks').catch((err) => setToast({ message: errorMessage(err), severity: 'error' }))}>
+                Download my tasks
+              </Button>
+            </span>
+          </Tooltip>
           <Button component={RouterLink} to="/tasks?new=1" variant="outlined" startIcon={<AddIcon />}>New task</Button>
         </Stack>
       </Stack>

@@ -13,6 +13,8 @@ import SendIcon from '@mui/icons-material/Send';
 import { useAuth } from '../context/AuthContext';
 import { FilesTab } from './Attachments';
 import { RequestBanner } from './Requests';
+import { downloadTask } from './exportTask';
+import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
 import { api } from '../api/client';
 import {
   ROLE_LABELS, STATUSES, byValue, errorMessage, formatDateTime, formatDuration, formatEstimate, isStaffRole,
@@ -436,7 +438,14 @@ export default function TaskDetailDialog({ task, tab, onTabChange, isAdmin, canE
         )}
         {tab === 'history' && <HistoryTab task={task} />}
       </DialogContent>
-      <DialogActions><Button onClick={onClose}>Close</Button></DialogActions>
+      <DialogActions sx={{ justifyContent: 'space-between' }}>
+        <Tooltip title="Task details, estimate, subtasks and time log as a text file">
+          <Button startIcon={<DescriptionOutlinedIcon />} onClick={() => downloadTask(task, user).catch((err) => notify(errorMessage(err), 'error'))}>
+            Download (.txt)
+          </Button>
+        </Tooltip>
+        <Button onClick={onClose}>Close</Button>
+      </DialogActions>
     </Dialog>
   );
 }
