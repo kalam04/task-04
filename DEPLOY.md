@@ -1,0 +1,117 @@
+# Deploying to a server
+
+These steps put the app on a Linux server (Ubuntu 24.04, e.g. a small VPS or an office machine)
+so the whole team can use it at an address like `https://tasks.yourcompany.com`.
+
+In production the backend serves the built React app, so **only one Node process on one port** is needed.
+Nginx sits in front of it to provide HTTPS.
+
+## 1. Install Node.js 24, Nginx and PM2
+
+```bash
+curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
+sudo apt-get install -y nodejs nginx git
+sudo npm install -g pm2
+```
+
+## 2. Get the code and install
+
+```bash
+sudo mkdir -p /opt/task-management && sudo chown $USER /opt/task-management
+git clone <your-private-repo-url> /opt/task-management
+cd /opt/task-management
+npm run install:all
+npm run build
+```
+
+## 3. Configure
+
+```bash
+sudo mkdir -p /var/lib/task-management /var/backups/task-management
+sudo chown $USER /var/lib/task-management /var/backups/task-management
+cp backend/.env.example backend/.env
+nano backend/.env
+```
+
+Set at least:
+
+```
+NODE_ENV=production
+PORT=4000
+JWT_SECRET=<output of: node -e "console.log(require('crypto').randomBytes(48).toString('hex'))">
+DEFAULT_USERNAME=admin
+DEFAULT_PASSWORD=<a strong temporary password>
+DB_PATH=/var/lib/task-management/data.db
+BACKUP_DIR=/var/backups/task-management
+TRUST_PROXY=true
+TZ=Asia/Dhaka
+```
+
+**Moving your existing data:** copy your local `backend/data.db` to the server as
+`/var/lib/task-management/data.db` (stop the local app first). Otherwise the app starts empty
+with just the admin account.
+
+## 4. Start it and keep it running
+
+```bash
+pm2 start ecosystem.config.cjs
+pm2 save
+pm2 startup        # run the command it prints, so the app starts after a reboot
+pm2 logs task-management   # check for "API running on http://localhost:4000 (serving the built app)"
+```
+
+## 5. Nginx + HTTPS
+
+Point your domain's DNS (an A record) at the server's IP, then create `/etc/nginx/sites-available/task-management`:
+
+```nginx
+server {
+    server_name tasks.yourcompany.com;
+    client_max_body_size 2m;
+
+    location / {
+        proxy_pass http://127.0.0.1:4000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+```bash
+sudo ln -s /etc/nginx/sites-available/task-management /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
+sudo apt-get install -y certbot python3-certbot-nginx
+sudo certbot --nginx -d tasks.yourcompany.com     # free HTTPS certificate, auto-renews
+```
+
+Only ports 80/443 (and SSH) need to be open; keep port 4000 closed to the outside:
+
+```bash
+sudo ufw allow OpenSSH && sudo ufw allow 'Nginx Full' && sudo ufw enable
+```
+
+## 6. After the first login
+
+Sign in as `admin`, then use **your name (top right) → Change password**.
+
+## Updating to a new version
+
+```bash
+cd /opt/task-management
+git pull
+npm run install:all
+npm run build
+pm2 restart task-management
+```
+
+The database lives in `/var/lib/task-management`, outside the code folder, so updates never touch it.
+Database changes needed by a new version are applied automatically when the app starts.
+
+## Backups
+
+- The app writes a backup **once a day** to `BACKUP_DIR` and keeps the newest 14 (`BACKUP_KEEP`).
+- Make one by hand any time: `npm run backup`
+- **Copy backups off the server too** (e.g. a nightly `rsync` or cloud storage). A backup on the same
+  disk doesn't help if the server is lost.
+- To restore: `pm2 stop task-management`, copy a backup file over `DB_PATH`, `pm2 start task-management`.

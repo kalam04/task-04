@@ -1,0 +1,14 @@
+{
+  "name": "task-management",
+  "private": true,
+  "description": "Task management app: React (Vite + MUI) frontend, Node.js (Express + SQLite) backend",
+  "scripts": {
+    "install:all": "npm --prefix backend ci && npm --prefix frontend ci",
+    "build": "npm --prefix frontend run build",
+    "start": "npm --prefix backend run start",
+    "backup": "npm --prefix backend run backup"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}
