@@ -113,7 +113,7 @@ function TaskFormDialog({ open, task, projects, developers, isAdmin, isStaff, us
               disabled={!form.project_id} helperText={form.project_id && !clients.length ? 'No clients in this project' : ''}>
               <MenuItem value=""><em>None</em></MenuItem>
               {clients.map((c) => <MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>)}
-              {task?.client_deleted && task.project_id === form.project_id && (
+              {!!task?.client_deleted && task.project_id === form.project_id && (
                 <MenuItem value={task.client_id}>{task.client_name} (deleted)</MenuItem>
               )}
             </TextField>
@@ -130,7 +130,7 @@ function TaskFormDialog({ open, task, projects, developers, isAdmin, isStaff, us
               disabled={!isAdmin && !!task} helperText={!isAdmin && task ? 'Only an admin can reassign a task' : ' '}>
               <MenuItem value=""><em>Unassigned</em></MenuItem>
               {developers.map((d) => <MenuItem key={d.id} value={d.id}>{d.name} ({d.username}){d.id === userId ? ' — you' : ''}</MenuItem>)}
-              {task?.developer_deleted && <MenuItem value={task.developer_id}>{task.developer_name} (deleted)</MenuItem>}
+              {!!task?.developer_deleted && <MenuItem value={task.developer_id}>{task.developer_name} (deleted)</MenuItem>}
             </TextField>
             )}
             <TextField select label="Priority" fullWidth value={form.priority} onChange={set('priority')}>

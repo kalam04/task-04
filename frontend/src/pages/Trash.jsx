@@ -71,7 +71,7 @@ export default function Trash() {
                     <TableCell><Typography fontWeight={500}>{type.title(item)}</Typography></TableCell>
                     <TableCell>
                       <Typography variant="body2" color="text.secondary">{type.detail(item)}</Typography>
-                      {blocked && <Typography variant="body2" color="warning.main">{type.blockedText || 'Restore its project first'}</Typography>}
+                      {!!blocked && <Typography variant="body2" color="warning.main">{type.blockedText || 'Restore its project first'}</Typography>}
                     </TableCell>
                     <TableCell sx={{ whiteSpace: 'nowrap' }}>{formatDate(item.deleted_at)}</TableCell>
                     <TableCell align="right">
