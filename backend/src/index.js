@@ -16,6 +16,7 @@ import { notificationsRouter } from './routes/notifications.js';
 import { reportsRouter } from './routes/reports.js';
 import { adminsRouter } from './routes/admins.js';
 import { dashboardRouter } from './routes/dashboard.js';
+import { filesRouter } from './routes/files.js';
 
 const isProduction = process.env.NODE_ENV === 'production';
 if (!process.env.JWT_SECRET || (isProduction && process.env.JWT_SECRET.length < 32)) {
@@ -41,6 +42,7 @@ app.use('/api/developers', requireAuth, developersRouter);
 app.use('/api/tasks', requireAuth, tasksRouter);
 app.use('/api/notifications', requireAuth, notificationsRouter);
 app.use('/api/dashboard', requireAuth, dashboardRouter);
+app.use('/api/files', filesRouter); // signed links, no login header needed
 app.use('/api/reports', requireAuth, requireAdmin, reportsRouter);
 app.use('/api/admins', requireAuth, requireAdmin, adminsRouter);
 app.use('/api/trash', requireAuth, requireAdmin, trashRouter);

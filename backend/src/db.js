@@ -172,3 +172,23 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, is_read);
 `);
+
+// File attachments (stored on disk in UPLOAD_DIR) and completion remarks
+db.exec(`
+  CREATE TABLE IF NOT EXISTS task_attachments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    original_name TEXT NOT NULL,
+    stored_name TEXT NOT NULL UNIQUE,
+    mime_type TEXT,
+    size INTEGER NOT NULL,
+    is_voice INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    deleted_at TEXT
+  );
+  CREATE INDEX IF NOT EXISTS idx_task_attachments_task ON task_attachments(task_id);
+`);
+if (!db.prepare('PRAGMA table_info(tasks)').all().some((c) => c.name === 'completion_remarks')) {
+  db.exec('ALTER TABLE tasks ADD COLUMN completion_remarks TEXT');
+}

@@ -20,7 +20,8 @@ const selectTask = `
     (SELECT COUNT(*) FROM time_entries e WHERE e.task_id = t.id) AS time_entry_count,
     (SELECT COUNT(*) FROM subtasks s WHERE s.task_id = t.id AND s.deleted_at IS NULL) AS subtask_total,
     (SELECT COUNT(*) FROM subtasks s WHERE s.task_id = t.id AND s.deleted_at IS NULL AND s.is_done = 1) AS subtask_done,
-    (SELECT COUNT(*) FROM task_comments m WHERE m.task_id = t.id AND m.deleted_at IS NULL) AS comment_count
+    (SELECT COUNT(*) FROM task_comments m WHERE m.task_id = t.id AND m.deleted_at IS NULL) AS comment_count,
+    (SELECT COUNT(*) FROM task_attachments f WHERE f.task_id = t.id AND f.deleted_at IS NULL) AS attachment_count
   FROM tasks t
   JOIN projects p ON p.id = t.project_id
   LEFT JOIN clients c ON c.id = t.client_id
@@ -183,6 +184,7 @@ function recordAssignment(req, before, task) {
 // Status changes: developers can start, complete or reject their own tasks; admins can set any status.
 tasksRouter.patch('/:id/status', (req, res) => {
   const { status, reject_reason } = req.body ?? {};
+  const remarks = typeof req.body?.remarks === 'string' ? req.body.remarks.trim().slice(0, 5000) || null : null;
   const task = getTask(req.params.id);
   const isDev = req.user.role === 'developer';
   if (!task) return res.status(404).json({ message: 'Task not found' });
@@ -199,9 +201,10 @@ tasksRouter.patch('/:id/status', (req, res) => {
     db.prepare(`
       UPDATE tasks SET status = ?, reject_reason = ?,
         completed_at = CASE WHEN ? = 'completed' THEN CURRENT_TIMESTAMP ELSE NULL END,
+        completion_remarks = CASE WHEN ? = 'completed' THEN ? ELSE completion_remarks END,
         updated_at = CURRENT_TIMESTAMP
       WHERE id = ?`
-    ).run(status, status === 'rejected' ? reject_reason.trim() : null, status, task.id);
+    ).run(status, status === 'rejected' ? reject_reason.trim() : null, status, status, remarks, task.id);
     // Starting work opens a time slot; finishing (or rejecting) closes the running one
     if (status === 'in_progress' && task.status === 'pending' && !task.running_since) startTimer(task.id, req.user.id);
     if (['completed', 'rejected', 'pending'].includes(status)) stopTimer(task.id);
@@ -209,14 +212,14 @@ tasksRouter.patch('/:id/status', (req, res) => {
   if (status !== task.status) {
     logActivity(task.id, req.user.id, status === 'rejected'
       ? `rejected the task: "${reject_reason.trim()}"`
-      : `changed status from ${STATUS_LABELS[task.status]} to ${STATUS_LABELS[status]}`);
+      : `changed status from ${STATUS_LABELS[task.status]} to ${STATUS_LABELS[status]}${status === 'completed' && remarks ? ` with remarks: "${remarks}"` : ''}`);
     // Developers finishing or rejecting tells the admins; an admin changing status tells the assignee
     if (isDev && ['completed', 'rejected'].includes(status)) {
       notify(adminIds(), {
         taskId: task.id, actorId: req.user.id, type: status,
         message: status === 'rejected'
           ? `${req.user.name} rejected "${task.title}": ${reject_reason.trim()}`
-          : `${req.user.name} completed "${task.title}"`,
+          : `${req.user.name} completed "${task.title}"${remarks ? `: ${remarks.length > 80 ? `${remarks.slice(0, 80)}…` : remarks}` : ''}`,
       });
     } else if (!isDev) {
       notify([task.developer_id], {
@@ -224,6 +227,25 @@ tasksRouter.patch('/:id/status', (req, res) => {
         message: `${req.user.name} changed "${task.title}" to ${STATUS_LABELS[status]}`,
       });
     }
+  }
+  res.json(getTask(task.id));
+});
+
+// Completion remarks: the assignee (or an admin) can add or change them once the task is completed
+tasksRouter.patch('/:id/remarks', (req, res) => {
+  const task = getTask(req.params.id);
+  if (!task) return res.status(404).json({ message: 'Task not found' });
+  if (!canEditTask(req.user, task)) return forbidden(res);
+  if (task.status !== 'completed') return res.status(400).json({ message: 'Remarks can be added once the task is completed' });
+  const remarks = typeof req.body?.remarks === 'string' ? req.body.remarks.trim().slice(0, 5000) || null : null;
+  if ((remarks ?? '') === (task.completion_remarks ?? '')) return res.json(task);
+  db.prepare('UPDATE tasks SET completion_remarks = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(remarks, task.id);
+  logActivity(task.id, req.user.id, remarks ? `updated the completion remarks: "${remarks}"` : 'removed the completion remarks');
+  if (req.user.role === 'developer' && remarks) {
+    notify(adminIds(), {
+      taskId: task.id, actorId: req.user.id, type: 'completed',
+      message: `${req.user.name} added remarks to "${task.title}": ${remarks.length > 80 ? `${remarks.slice(0, 80)}…` : remarks}`,
+    });
   }
   res.json(getTask(task.id));
 });

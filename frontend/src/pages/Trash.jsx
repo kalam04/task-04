@@ -13,6 +13,7 @@ const TYPES = [
   { key: 'clients', label: 'Clients', title: (i) => i.name, detail: (i) => `Project: ${i.project_name}`, blocked: (i) => i.project_deleted },
   { key: 'developers', label: 'Developers', title: (i) => i.name, detail: (i) => `Username: ${i.username}` },
   { key: 'admins', label: 'Admins', title: (i) => i.name, detail: (i) => `Username: ${i.username}` },
+  { key: 'files', label: 'Files', title: (i) => (i.is_voice ? 'Voice note' : i.name), detail: (i) => `Task: ${i.task_title} · ${(i.size / 1024 / 1024).toFixed(2)} MB`, blocked: (i) => i.task_deleted, blockedText: 'Restore its task first' },
   { key: 'subtasks', label: 'Subtasks', title: (i) => i.title, detail: (i) => `Task: ${i.task_title}`, blocked: (i) => i.task_deleted, blockedText: 'Restore its task first' },
 ];
 

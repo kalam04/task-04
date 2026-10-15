@@ -11,6 +11,7 @@ import HighlightOffIcon from '@mui/icons-material/HighlightOff';
 import EventBusyIcon from '@mui/icons-material/EventBusy';
 import SyncAltIcon from '@mui/icons-material/SyncAlt';
 import AddTaskIcon from '@mui/icons-material/AddTask';
+import AttachFileIcon from '@mui/icons-material/AttachFile';
 import { api } from '../api/client';
 import { timeAgo } from './constants';
 
@@ -22,6 +23,7 @@ const ICONS = {
   overdue: <EventBusyIcon color="warning" />,
   status: <SyncAltIcon color="action" />,
   created: <AddTaskIcon color="primary" />,
+  attachment: <AttachFileIcon color="action" />,
 };
 
 const POLL_MS = 30000;
@@ -41,7 +43,7 @@ export default function NotificationsBell() {
   const open = (n) => {
     setAnchor(null);
     if (!n.is_read) api.post(`/notifications/${n.id}/read`).then(load);
-    if (n.task_id && !n.task_deleted) navigate(`/tasks?task=${n.task_id}&tab=${n.type === 'comment' ? 'comments' : 'history'}`);
+    if (n.task_id && !n.task_deleted) navigate(`/tasks?task=${n.task_id}&tab=${n.type === 'comment' ? 'comments' : n.type === 'attachment' ? 'files' : 'history'}`);
   };
 
   const readAll = () => api.post('/notifications/read-all').then(load);

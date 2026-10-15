@@ -42,13 +42,16 @@ JWT_SECRET=<output of: node -e "console.log(require('crypto').randomBytes(48).to
 DEFAULT_USERNAME=admin
 DEFAULT_PASSWORD=<a strong temporary password>
 DB_PATH=/var/lib/task-management/data.db
+UPLOAD_DIR=/var/lib/task-management/uploads
+MAX_UPLOAD_MB=2048
 BACKUP_DIR=/var/backups/task-management
 TRUST_PROXY=true
 TZ=Asia/Dhaka
 ```
 
 **Moving your existing data:** copy your local `backend/data.db` to the server as
-`/var/lib/task-management/data.db` (stop the local app first). Otherwise the app starts empty
+`/var/lib/task-management/data.db`, and the `backend/uploads` folder (attached files) to
+`/var/lib/task-management/uploads` (stop the local app first). Otherwise the app starts empty
 with just the admin account.
 
 ## 4. Start it and keep it running
@@ -67,10 +70,16 @@ Point your domain's DNS (an A record) at the server's IP, then create `/etc/ngin
 ```nginx
 server {
     server_name tasks.yourcompany.com;
-    client_max_body_size 2m;
+    # Must be at least MAX_UPLOAD_MB, or large attachments fail with "413 Request Entity Too Large"
+    client_max_body_size 2048m;
 
     location / {
         proxy_pass http://127.0.0.1:4000;
+        # Stream big uploads/downloads straight through instead of buffering them on disk first
+        proxy_request_buffering off;
+        proxy_buffering off;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
@@ -112,6 +121,8 @@ Database changes needed by a new version are applied automatically when the app 
 
 - The app writes a backup **once a day** to `BACKUP_DIR` and keeps the newest 14 (`BACKUP_KEEP`).
 - Make one by hand any time: `npm run backup`
+- Attached files live in `UPLOAD_DIR`, **not** in the database backup. Back that folder up as well, e.g.
+  `rsync -a /var/lib/task-management/uploads/ backup-host:/backups/task-uploads/` from a nightly cron job.
 - **Copy backups off the server too** (e.g. a nightly `rsync` or cloud storage). A backup on the same
   disk doesn't help if the server is lost.
 - To restore: `pm2 stop task-management`, copy a backup file over `DB_PATH`, `pm2 start task-management`.

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
-  Alert, Box, Button, Card, CardContent, Chip, Dialog, DialogActions, DialogContent, DialogTitle,
+  Alert, Box, Button, Card, CardContent, Chip, LinearProgress, Dialog, DialogActions, DialogContent, DialogTitle,
   Grid, IconButton, ListItemIcon, Menu, MenuItem, Paper, Snackbar, Stack, Table, TableBody, TableCell, TableContainer,
   TableHead, TableRow, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography,
 } from '@mui/material';
@@ -24,6 +24,9 @@ import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { PRIORITIES, STATUSES, byValue, dueState, errorMessage, formatDuration, formatEstimate } from '../components/constants';
 import TaskDetailDialog from '../components/TaskDetailDialog';
+import { FileDropZone, PendingFiles, formatBytes, uploadFiles } from '../components/Attachments';
+import AttachFileIcon from '@mui/icons-material/AttachFile';
+import TaskAltIcon from '@mui/icons-material/TaskAlt';
 import useNow, { totalMs } from '../components/useNow';
 import ConfirmDialog from '../components/ConfirmDialog';
 
@@ -34,10 +37,14 @@ function TaskFormDialog({ open, task, projects, developers, isAdmin, userId, onC
   const [form, setForm] = useState(emptyTask);
   const [clients, setClients] = useState([]);
   const [error, setError] = useState('');
+  const [pending, setPending] = useState([]); // [{ file, voice }] uploaded after the task is created
+  const [uploading, setUploading] = useState(null); // percent while uploading
 
   useEffect(() => {
     if (!open) return;
     setError('');
+    setPending([]);
+    setUploading(null);
     setForm(task ? {
       ...emptyTask, ...Object.fromEntries(Object.keys(emptyTask).map((k) => [k, task[k] ?? ''])),
     } : { ...emptyTask, developer_id: isAdmin ? '' : userId });
@@ -57,11 +64,32 @@ function TaskFormDialog({ open, task, projects, developers, isAdmin, userId, onC
     try {
       const payload = { ...form };
       for (const k of ['client_id', 'developer_id', 'due_date']) if (!payload[k]) payload[k] = null;
-      if (task) await api.put(`/tasks/${task.id}`, payload);
-      else await api.post('/tasks', payload);
-      onSaved(task ? 'Task updated' : 'Task created');
+      if (task) {
+        await api.put(`/tasks/${task.id}`, payload);
+        onSaved('Task updated');
+        return;
+      }
+      const { data: created } = await api.post('/tasks', payload);
+      // Then upload attachments: regular files together, each voice note on its own
+      const files = pending.filter((p) => !p.voice).map((p) => p.file);
+      const voices = pending.filter((p) => p.voice).map((p) => p.file);
+      const batches = [...(files.length ? [{ files, voice: false }] : []), ...voices.map((v) => ({ files: [v], voice: true }))];
+      try {
+        for (const [i, b] of batches.entries()) {
+          setUploading(Math.round((i / batches.length) * 100));
+          await uploadFiles(created.id, b.files, {
+            voice: b.voice, onProgress: (p) => setUploading(Math.round(((i + p / 100) / batches.length) * 100)),
+          });
+        }
+      } catch (err) {
+        onSaved(`Task created, but an attachment failed: ${errorMessage(err)}. Add it from the task's Files tab.`, 'warning');
+        return;
+      }
+      onSaved(batches.length ? `Task created with ${pending.length} attachment${pending.length === 1 ? '' : 's'}` : 'Task created');
     } catch (err) {
       setError(errorMessage(err));
+    } finally {
+      setUploading(null);
     }
   };
 
@@ -99,11 +127,48 @@ function TaskFormDialog({ open, task, projects, developers, isAdmin, userId, onC
           </Stack>
           <TextField label="Due date" type="date" value={form.due_date} onChange={set('due_date')}
             slotProps={{ inputLabel: { shrink: true } }} />
+          {!task && (
+            <Box>
+              <Typography variant="body2" fontWeight={600} sx={{ mb: 1 }}>
+                Attachments {pending.length > 0 && `(${pending.length} · ${formatBytes(pending.reduce((s, p) => s + p.file.size, 0))})`}
+              </Typography>
+              <FileDropZone disabled={uploading != null}
+                onFiles={(files, { voice }) => setPending((p) => [...p, ...files.map((file) => ({ file, voice }))])} />
+              <PendingFiles files={pending} onRemove={(i) => setPending((p) => p.filter((_, j) => j !== i))} />
+            </Box>
+          )}
+          {uploading != null && (
+            <Box>
+              <Typography variant="body2" sx={{ mb: 0.5 }}>Uploading attachments… {uploading}%</Typography>
+              <LinearProgress variant="determinate" value={uploading} />
+            </Box>
+          )}
         </Stack>
       </DialogContent>
       <DialogActions>
+        <Button onClick={onClose} disabled={uploading != null}>Cancel</Button>
+        <Button variant="contained" onClick={save} disabled={uploading != null}>{task ? 'Save' : 'Create'}</Button>
+      </DialogActions>
+    </Dialog>
+  );
+}
+
+function CompleteDialog({ task, onClose, onConfirm }) {
+  const [remarks, setRemarks] = useState('');
+  useEffect(() => setRemarks(''), [task]);
+  return (
+    <Dialog open={!!task} onClose={onClose} fullWidth maxWidth="sm">
+      <DialogTitle>Complete task</DialogTitle>
+      <DialogContent>
+        <Typography variant="body2" sx={{ mb: 2 }}>{task?.title}</Typography>
+        <TextField label="Remarks (optional)" multiline minRows={3} fullWidth autoFocus value={remarks}
+          onChange={(e) => setRemarks(e.target.value)}
+          placeholder="What was done, how it was tested, anything the team should know…"
+          helperText="You can also add or change remarks later from the task." />
+      </DialogContent>
+      <DialogActions>
         <Button onClick={onClose}>Cancel</Button>
-        <Button variant="contained" onClick={save}>{task ? 'Save' : 'Create'}</Button>
+        <Button color="success" variant="contained" startIcon={<TaskAltIcon />} onClick={() => onConfirm(remarks)}>Mark complete</Button>
       </DialogActions>
     </Dialog>
   );
@@ -231,6 +296,7 @@ export default function Tasks() {
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [rejecting, setRejecting] = useState(null);
+  const [completing, setCompleting] = useState(null);
   const [estimating, setEstimating] = useState(null);
   // The open task dialog is in the URL too (?task=12&tab=comments), so notifications can link to it
   const detailId = Number(searchParams.get('task')) || null;
@@ -288,9 +354,9 @@ export default function Tasks() {
 
   const notify = (message, severity = 'success') => setToast({ message, severity });
 
-  const changeStatus = async (task, status, reject_reason) => {
+  const changeStatus = async (task, status, reject_reason, remarks) => {
     try {
-      await api.patch(`/tasks/${task.id}/status`, { status, reject_reason });
+      await api.patch(`/tasks/${task.id}/status`, { status, reject_reason, remarks });
       notify(`Task marked ${byValue(STATUSES, status).label.toLowerCase()}`);
       load();
     } catch (err) {
@@ -410,7 +476,7 @@ export default function Tasks() {
         {detailButtons(t)}
         <Tooltip title="Set time estimate"><IconButton size="small" onClick={() => setEstimating(t)}><TimerOutlinedIcon /></IconButton></Tooltip>
         <Tooltip title="Edit"><IconButton size="small" onClick={() => { setEditing(t); setFormOpen(true); }}><EditIcon /></IconButton></Tooltip>
-        <Tooltip title="Mark complete"><IconButton size="small" color="success" onClick={() => changeStatus(t, 'completed')}><CheckCircleIcon /></IconButton></Tooltip>
+        <Tooltip title="Mark complete"><IconButton size="small" color="success" onClick={() => setCompleting(t)}><CheckCircleIcon /></IconButton></Tooltip>
         <Tooltip title="Reject"><IconButton size="small" color="error" onClick={() => setRejecting(t)}><CancelIcon /></IconButton></Tooltip>
       </Stack>
     );
@@ -525,6 +591,10 @@ export default function Tasks() {
                           label={`${t.subtask_done}/${t.subtask_total} subtasks`}
                           onClick={() => setDetail({ id: t.id, tab: 'subtasks' })} />
                       )}
+                      {!!t.attachment_count && (
+                        <Chip size="small" variant="outlined" icon={<AttachFileIcon />} label={t.attachment_count}
+                          onClick={() => setDetail({ id: t.id, tab: 'files' })} />
+                      )}
                       {!!t.comment_count && (
                         <Chip size="small" variant="outlined" icon={<ChatBubbleOutlineIcon />} label={t.comment_count}
                           onClick={() => setDetail({ id: t.id, tab: 'comments' })} />
@@ -532,6 +602,9 @@ export default function Tasks() {
                     </Stack>
                     {t.status === 'rejected' && t.reject_reason && (
                       <Typography variant="body2" color="error">Reason: {t.reject_reason}</Typography>
+                    )}
+                    {t.status === 'completed' && t.completion_remarks && (
+                      <Typography variant="body2" color="success.main" noWrap title={t.completion_remarks}>Remarks: {t.completion_remarks}</Typography>
                     )}
                   </TableCell>
                   <TableCell>
@@ -585,6 +658,7 @@ export default function Tasks() {
               const task = statusMenu.task;
               setStatusMenu(null);
               if (s.value === 'rejected') setRejecting(task);
+              else if (s.value === 'completed') setCompleting(task);
               else changeStatus(task, s.value);
             }}>
               <ListItemIcon>{current && <CheckIcon fontSize="small" />}</ListItemIcon>
@@ -613,7 +687,9 @@ export default function Tasks() {
       </Menu>
 
       <TaskFormDialog open={formOpen} task={editing} projects={projects} developers={developers} isAdmin={isAdmin} userId={user.id}
-        onClose={() => setFormOpen(false)} onSaved={(msg) => { setFormOpen(false); notify(msg); load(); }} />
+        onClose={() => setFormOpen(false)} onSaved={(msg, severity) => { setFormOpen(false); notify(msg, severity); load(); }} />
+      <CompleteDialog task={completing} onClose={() => setCompleting(null)}
+        onConfirm={(remarks) => { changeStatus(completing, 'completed', undefined, remarks); setCompleting(null); }} />
       <RejectDialog task={rejecting} onClose={() => setRejecting(null)}
         onConfirm={(reason) => { changeStatus(rejecting, 'rejected', reason); setRejecting(null); }} />
       <AssignDialog task={assigning} developers={developers} defaultId={isAdmin ? '' : user.id}

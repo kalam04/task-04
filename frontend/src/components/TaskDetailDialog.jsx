@@ -11,6 +11,7 @@ import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import StopIcon from '@mui/icons-material/Stop';
 import SendIcon from '@mui/icons-material/Send';
 import { useAuth } from '../context/AuthContext';
+import { FilesTab } from './Attachments';
 import { api } from '../api/client';
 import {
   STATUSES, byValue, errorMessage, formatDateTime, formatDuration, formatEstimate, isoToLocalInput, localInputToIso,
@@ -340,6 +341,49 @@ function HistoryTab({ task }) {
   );
 }
 
+// Completion remarks: shown on completed tasks; the assignee or an admin can add/edit them
+function RemarksBox({ task, canEdit, onChanged, notify }) {
+  const [editing, setEditing] = useState(false);
+  const [text, setText] = useState('');
+  if (task.status !== 'completed') return null;
+  const save = async () => {
+    try {
+      await api.patch(`/tasks/${task.id}/remarks`, { remarks: text });
+      notify('Remarks saved');
+      setEditing(false);
+      onChanged();
+    } catch (err) {
+      notify(errorMessage(err), 'error');
+    }
+  };
+  return (
+    <Paper variant="outlined" sx={{ mt: 1.5, p: 1.5, borderColor: 'success.light', bgcolor: (t) => `${t.palette.success.main}0a` }}>
+      <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'center' }}>
+        <Typography variant="body2" fontWeight={600} color="success.main">Completion remarks</Typography>
+        {canEdit && !editing && (
+          <Button size="small" onClick={() => { setText(task.completion_remarks ?? ''); setEditing(true); }}>
+            {task.completion_remarks ? 'Edit' : 'Add remarks'}
+          </Button>
+        )}
+      </Stack>
+      {editing ? (
+        <Stack spacing={1} sx={{ mt: 1 }}>
+          <TextField size="small" multiline minRows={3} autoFocus value={text} onChange={(e) => setText(e.target.value)}
+            placeholder="What was done, how it was tested, anything the team should know…" />
+          <Stack direction="row" spacing={1}>
+            <Button size="small" variant="contained" onClick={save}>Save</Button>
+            <Button size="small" onClick={() => setEditing(false)}>Cancel</Button>
+          </Stack>
+        </Stack>
+      ) : (
+        <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', mt: 0.5 }} color={task.completion_remarks ? 'text.primary' : 'text.secondary'}>
+          {task.completion_remarks || 'No remarks yet.'}
+        </Typography>
+      )}
+    </Paper>
+  );
+}
+
 export default function TaskDetailDialog({ task, tab, onTabChange, isAdmin, canEdit, onClose, onChanged, notify }) {
   if (!task) return null;
   const status = byValue(STATUSES, task.status);
@@ -355,20 +399,23 @@ export default function TaskDetailDialog({ task, tab, onTabChange, isAdmin, canE
           </Typography>
         </Stack>
         {task.description && <Typography variant="body2" sx={{ mt: 1 }}>{task.description}</Typography>}
+        <RemarksBox task={task} canEdit={canEdit} onChanged={onChanged} notify={notify} />
         {!canEdit && (
           <Alert severity="info" sx={{ mt: 1.5 }}>
-            View only — {task.developer_name ? `assigned to ${task.developer_name}` : 'assign this task to make changes'}. You can still comment.
+            View only — {task.developer_name ? `assigned to ${task.developer_name}` : 'assign this task to make changes'}. You can still comment and attach files.
           </Alert>
         )}
       </DialogTitle>
-      <Tabs value={tab} onChange={(e, v) => onTabChange(v)} sx={{ px: 3, borderBottom: 1, borderColor: 'divider' }}>
+      <Tabs value={tab} onChange={(e, v) => onTabChange(v)} variant="scrollable" allowScrollButtonsMobile sx={{ px: 3, borderBottom: 1, borderColor: 'divider' }}>
         <Tab value="comments" label={`Comments${task.comment_count ? ` (${task.comment_count})` : ''}`} />
+        <Tab value="files" label={`Files${task.attachment_count ? ` (${task.attachment_count})` : ''}`} />
         <Tab value="subtasks" label={`Subtasks (${task.subtask_done}/${task.subtask_total})`} />
         <Tab value="time" label="Time log" />
         <Tab value="history" label="History" />
       </Tabs>
       <DialogContent sx={{ minHeight: 320 }}>
         {tab === 'comments' && <CommentsTab task={task} onChanged={onChanged} notify={notify} />}
+        {tab === 'files' && <FilesTab task={task} onChanged={onChanged} notify={notify} />}
         {tab === 'subtasks' && (
           <SubtasksTab task={task} editable={canEdit && (isAdmin || !closed)} onChanged={onChanged} notify={notify} />
         )}

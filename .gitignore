@@ -6,3 +6,4 @@ backups/
 dist
 .DS_Store
 .claude/
+uploads/

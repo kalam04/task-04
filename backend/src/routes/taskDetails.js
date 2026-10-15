@@ -2,7 +2,11 @@ import { Router } from 'express';
 import { db, transaction } from '../db.js';
 import { canEditTask, getTask } from './tasks.js';
 import { runningEntry, startTimer, stopTimer } from './timer.js';
+import fs from 'node:fs';
+import path from 'node:path';
+import jwt from 'jsonwebtoken';
 import { adminIds, logActivity, notify } from '../activity.js';
+import { decodeName, maxUploadBytes, upload, uploadDir } from '../uploads.js';
 
 // Mounted at /api/tasks/:taskId — subtasks and the time log of one task
 export const taskDetailsRouter = Router({ mergeParams: true });
@@ -12,8 +16,9 @@ export const taskDetailsRouter = Router({ mergeParams: true });
 taskDetailsRouter.use((req, res, next) => {
   const task = getTask(req.params.taskId);
   if (!task) return res.status(404).json({ message: 'Task not found' });
-  const isComment = req.path.startsWith('/comments');
-  if (req.method !== 'GET' && !isComment && !canEditTask(req.user, task)) {
+  // Comments and file attachments are open to anyone who can see the task
+  const isShared = req.path.startsWith('/comments') || req.path.startsWith('/attachments');
+  if (req.method !== 'GET' && !isShared && !canEditTask(req.user, task)) {
     return res.status(403).json({ message: 'Only the assigned developer or an admin can change this task' });
   }
   req.task = task;
@@ -223,3 +228,67 @@ taskDetailsRouter.get('/activity', (req, res) => {
     WHERE a.task_id = ? ORDER BY a.created_at DESC, a.id DESC`
   ).all(req.task.id));
 });
+
+/* ---------- Attachments ---------- */
+
+const FILE_LINK_TTL = '4h';
+const fileUrl = (id) => `/api/files/${id}?token=${jwt.sign({ aid: id, typ: 'file' }, process.env.JWT_SECRET, { expiresIn: FILE_LINK_TTL })}`;
+
+export const listAttachments = (taskId) => db.prepare(`
+  SELECT a.id, a.original_name, a.mime_type, a.size, a.is_voice, a.created_at, a.user_id, u.name AS user_name
+  FROM task_attachments a LEFT JOIN users u ON u.id = a.user_id
+  WHERE a.task_id = ? AND a.deleted_at IS NULL ORDER BY a.created_at DESC, a.id DESC`
+).all(taskId).map((a) => ({ ...a, url: fileUrl(a.id) }));
+
+taskDetailsRouter.get('/attachments', (req, res) => res.json(listAttachments(req.task.id)));
+
+taskDetailsRouter.post('/attachments', (req, res) => {
+  upload.array('files')(req, res, (err) => {
+    const files = req.files ?? [];
+    const discard = () => files.forEach((f) => fs.rm(f.path, { force: true }, () => {}));
+    if (err) {
+      discard();
+      const tooBig = err.code === 'LIMIT_FILE_SIZE';
+      return res.status(tooBig ? 413 : 400).json({
+        message: tooBig ? `A file is larger than the ${Math.round(maxUploadBytes / 1024 / 1024)} MB limit` : `Upload failed: ${err.message}`,
+      });
+    }
+    if (!files.length) return res.status(400).json({ message: 'No files received' });
+    const isVoice = req.body?.voice === '1';
+    const insert = db.prepare(`
+      INSERT INTO task_attachments (task_id, user_id, original_name, stored_name, mime_type, size, is_voice, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
+    const names = files.map((f) => {
+      const name = decodeName(f.originalname).slice(0, 255) || 'file';
+      insert.run(req.task.id, req.user.id, name, f.filename, f.mimetype || 'application/octet-stream', f.size,
+        isVoice ? 1 : 0, new Date().toISOString());
+      return name;
+    });
+    const what = isVoice ? 'a voice note' : names.length === 1 ? `"${names[0]}"` : `${names.length} files`;
+    logActivity(req.task.id, req.user.id, `attached ${what}`);
+    notify([req.task.developer_id, ...adminIds()], {
+      taskId: req.task.id, actorId: req.user.id, type: 'attachment',
+      message: `${req.user.name} attached ${what} to "${req.task.title}"`,
+    });
+    res.status(201).json(listAttachments(req.task.id));
+  });
+});
+
+// Soft delete (restorable from Trash): the uploader or an admin
+taskDetailsRouter.delete('/attachments/:attachmentId', (req, res) => {
+  const file = db.prepare('SELECT * FROM task_attachments WHERE id = ? AND task_id = ? AND deleted_at IS NULL')
+    .get(req.params.attachmentId, req.task.id);
+  if (!file) return res.status(404).json({ message: 'File not found' });
+  if (file.user_id !== req.user.id && req.user.role !== 'admin') {
+    return res.status(403).json({ message: 'Only the person who uploaded it or an admin can delete this file' });
+  }
+  db.prepare('UPDATE task_attachments SET deleted_at = ? WHERE id = ?').run(new Date().toISOString(), file.id);
+  logActivity(req.task.id, req.user.id, `deleted ${file.is_voice ? 'a voice note' : `file "${file.original_name}"`}`);
+  res.json(listAttachments(req.task.id));
+});
+
+// Make sure the stored file path can never escape the upload folder
+export const storedPath = (storedName) => {
+  const p = path.join(uploadDir, path.basename(storedName));
+  return p.startsWith(uploadDir) ? p : null;
+};
