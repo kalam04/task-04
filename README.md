@@ -26,6 +26,7 @@ The default user is created on first backend start from `DEFAULT_USERNAME` / `DE
 - **History:** every change to a task (status, assignment, priority, due date, estimate, subtasks, time slots) is logged with who and when.
 - **Notifications:** bell in the top bar — assigned to you, your task's status changed, a developer completed/rejected a task (admins), new comments, and overdue tasks (checked hourly).
 - **Overdue:** open tasks past their due date are highlighted in red with "N days overdue".
+- **My Dashboard (developers):** their landing page — running timer with Stop/Start, open/due today/overdue counts, hours today and this week, a priority-ordered focus list with estimate progress, hours per day this week, this week by project, recent comments on their tasks, and unassigned tasks to pick up.
 - **Dashboard & Reports (admin):** hours by developer/project/client for any period, current workload, estimate vs actual (1 day = 8 hours), and Excel (CSV) export of timesheets and summaries.
 - **Admins (admin):** create more admin accounts on the Admins page; you can't delete yourself or the last admin, and deleted admins go to Trash.
 - **Accounts:** everyone can change their own password; 10 wrong passwords lock that login for 15 minutes.

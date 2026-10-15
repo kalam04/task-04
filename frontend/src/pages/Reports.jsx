@@ -6,7 +6,7 @@ import {
 } from '@mui/material';
 import FileDownloadIcon from '@mui/icons-material/FileDownload';
 import { api } from '../api/client';
-import { STATUSES, byValue, errorMessage, formatDuration } from '../components/constants';
+import { STATUSES, byValue, errorMessage, formatDuration, projectColorFn } from '../components/constants';
 
 const H = 3600;
 
@@ -60,20 +60,9 @@ function HoursBar({ seconds, max }) {
 const share = (seconds, total) => (total ? (seconds / total) * 100 : 0);
 const pct = (value) => `${value < 10 && value > 0 ? value.toFixed(1) : Math.round(value)}%`;
 
-// Categorical slots (validated: CVD + normal-vision separation on the light surface).
-// A project keeps its color whatever the filters are; projects past the 7th share the "other" gray.
-const PROJECT_COLORS = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#4a3aa7'];
-const OTHER_COLOR = '#9e9d97';
-
 function ProjectShare({ rows, projects }) {
   const total = rows.reduce((sum, r) => sum + r.seconds, 0);
-  const colorOf = useMemo(() => {
-    const byId = [...projects].sort((a, b) => a.id - b.id);
-    return (id) => {
-      const slot = byId.findIndex((p) => p.id === id);
-      return slot >= 0 && slot < PROJECT_COLORS.length ? PROJECT_COLORS[slot] : OTHER_COLOR;
-    };
-  }, [projects]);
+  const colorOf = useMemo(() => projectColorFn(projects), [projects]);
   const sorted = rows.filter((r) => r.seconds > 0).sort((a, b) => b.seconds - a.seconds);
   const top = sorted[0];
 

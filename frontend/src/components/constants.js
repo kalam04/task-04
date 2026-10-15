@@ -61,3 +61,20 @@ export const dueState = (task) => {
   const days = Math.round((new Date(today) - new Date(task.due_date)) / 86400000);
   return { kind: 'overdue', days };
 };
+
+// Estimates in days count this many working hours (same as the server's reports)
+export const HOURS_PER_DAY = 8;
+export const estimateSeconds = (t) =>
+  t.estimate_value == null ? null : t.estimate_value * (t.estimate_unit === 'days' ? HOURS_PER_DAY : 1) * 3600;
+
+// Categorical slots (validated: CVD + normal-vision separation on the light surface).
+// A project keeps its color whatever the filters are; projects past the 7th share the "other" gray.
+export const PROJECT_COLORS = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#4a3aa7'];
+export const OTHER_COLOR = '#9e9d97';
+export const projectColorFn = (projects) => {
+  const byId = [...projects].sort((a, b) => a.id - b.id);
+  return (id) => {
+    const slot = byId.findIndex((p) => p.id === id);
+    return slot >= 0 && slot < PROJECT_COLORS.length ? PROJECT_COLORS[slot] : OTHER_COLOR;
+  };
+};

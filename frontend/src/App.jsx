@@ -9,14 +9,22 @@ import Developers from './pages/Developers';
 import Trash from './pages/Trash';
 import Reports from './pages/Reports';
 import Admins from './pages/Admins';
+import MyDashboard from './pages/MyDashboard';
 
-function ProtectedRoute({ children, adminOnly }) {
+// Where each role lands after signing in
+function Home() {
+  const { user } = useAuth();
+  return <Navigate to={user?.role === 'developer' ? '/dashboard' : '/tasks'} replace />;
+}
+
+function ProtectedRoute({ children, adminOnly, developerOnly }) {
   const { user, loading } = useAuth();
   if (loading) {
     return <Box sx={{ minHeight: '100vh', display: 'grid', placeItems: 'center' }}><CircularProgress /></Box>;
   }
   if (!user) return <Navigate to="/login" replace />;
-  if (adminOnly && user.role !== 'admin') return <Navigate to="/tasks" replace />;
+  if (adminOnly && user.role !== 'admin') return <Navigate to="/dashboard" replace />;
+  if (developerOnly && user.role !== 'developer') return <Navigate to="/reports" replace />;
   return children;
 }
 
@@ -27,6 +35,8 @@ export default function App() {
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
+            <Route index element={<Home />} />
+            <Route path="/dashboard" element={<ProtectedRoute developerOnly><MyDashboard /></ProtectedRoute>} />
             <Route path="/tasks" element={<Tasks />} />
             <Route path="/projects" element={<ProtectedRoute adminOnly><Projects /></ProtectedRoute>} />
             <Route path="/developers" element={<ProtectedRoute adminOnly><Developers /></ProtectedRoute>} />
@@ -34,7 +44,7 @@ export default function App() {
             <Route path="/admins" element={<ProtectedRoute adminOnly><Admins /></ProtectedRoute>} />
             <Route path="/reports" element={<ProtectedRoute adminOnly><Reports /></ProtectedRoute>} />
           </Route>
-          <Route path="*" element={<Navigate to="/tasks" replace />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>
     </AuthProvider>

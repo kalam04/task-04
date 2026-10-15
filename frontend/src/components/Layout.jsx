@@ -5,6 +5,7 @@ import {
   Menu, MenuItem, Snackbar, Toolbar, Typography, useMediaQuery, useTheme,
 } from '@mui/material';
 import InsightsIcon from '@mui/icons-material/Insights';
+import DashboardIcon from '@mui/icons-material/Dashboard';
 import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings';
 import KeyIcon from '@mui/icons-material/Key';
 import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown';
@@ -31,6 +32,7 @@ export default function Layout() {
   const [toast, setToast] = useState('');
 
   const links = [
+    ...(isAdmin ? [] : [{ to: '/dashboard', label: 'My Dashboard', icon: <DashboardIcon /> }]),
     { to: '/tasks', label: 'Tasks', icon: <AssignmentIcon /> },
     ...(isAdmin ? [
       { to: '/reports', label: 'Dashboard & Reports', icon: <InsightsIcon /> },
