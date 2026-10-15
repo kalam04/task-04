@@ -12,6 +12,7 @@ const TYPES = [
   { key: 'projects', label: 'Projects', title: (i) => i.name, detail: (i) => `Includes ${i.client_count} client(s), ${i.task_count} task(s)` },
   { key: 'clients', label: 'Clients', title: (i) => i.name, detail: (i) => `Project: ${i.project_name}`, blocked: (i) => i.project_deleted },
   { key: 'developers', label: 'Developers', title: (i) => i.name, detail: (i) => `Username: ${i.username}` },
+  { key: 'admins', label: 'Admins', title: (i) => i.name, detail: (i) => `Username: ${i.username}` },
   { key: 'subtasks', label: 'Subtasks', title: (i) => i.title, detail: (i) => `Task: ${i.task_title}`, blocked: (i) => i.task_deleted, blockedText: 'Restore its task first' },
 ];
 

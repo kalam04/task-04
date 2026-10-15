@@ -27,6 +27,7 @@ The default user is created on first backend start from `DEFAULT_USERNAME` / `DE
 - **Notifications:** bell in the top bar — assigned to you, your task's status changed, a developer completed/rejected a task (admins), new comments, and overdue tasks (checked hourly).
 - **Overdue:** open tasks past their due date are highlighted in red with "N days overdue".
 - **Dashboard & Reports (admin):** hours by developer/project/client for any period, current workload, estimate vs actual (1 day = 8 hours), and Excel (CSV) export of timesheets and summaries.
+- **Admins (admin):** create more admin accounts on the Admins page; you can't delete yourself or the last admin, and deleted admins go to Trash.
 - **Accounts:** everyone can change their own password; 10 wrong passwords lock that login for 15 minutes.
 - **Soft delete & Trash:** deleting a task, project, client or developer moves it to Trash (admin only) where it can be restored. Deleting a project also trashes its clients and tasks; restoring the project brings them back. Trashed developers cannot sign in.
 

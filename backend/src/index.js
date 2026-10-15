@@ -14,6 +14,7 @@ import { tasksRouter } from './routes/tasks.js';
 import { trashRouter } from './routes/trash.js';
 import { notificationsRouter } from './routes/notifications.js';
 import { reportsRouter } from './routes/reports.js';
+import { adminsRouter } from './routes/admins.js';
 
 const isProduction = process.env.NODE_ENV === 'production';
 if (!process.env.JWT_SECRET || (isProduction && process.env.JWT_SECRET.length < 32)) {
@@ -39,6 +40,7 @@ app.use('/api/developers', requireAuth, developersRouter);
 app.use('/api/tasks', requireAuth, tasksRouter);
 app.use('/api/notifications', requireAuth, notificationsRouter);
 app.use('/api/reports', requireAuth, requireAdmin, reportsRouter);
+app.use('/api/admins', requireAuth, requireAdmin, adminsRouter);
 app.use('/api/trash', requireAuth, requireAdmin, trashRouter);
 app.use('/api', (req, res) => res.status(404).json({ message: 'Not found' }));
 

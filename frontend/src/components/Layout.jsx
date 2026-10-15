@@ -5,6 +5,7 @@ import {
   Menu, MenuItem, Snackbar, Toolbar, Typography, useMediaQuery, useTheme,
 } from '@mui/material';
 import InsightsIcon from '@mui/icons-material/Insights';
+import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings';
 import KeyIcon from '@mui/icons-material/Key';
 import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown';
 import NotificationsBell from './NotificationsBell';
@@ -35,6 +36,7 @@ export default function Layout() {
       { to: '/reports', label: 'Dashboard & Reports', icon: <InsightsIcon /> },
       { to: '/projects', label: 'Projects & Clients', icon: <FolderIcon /> },
       { to: '/developers', label: 'Developers', icon: <GroupIcon /> },
+      { to: '/admins', label: 'Admins', icon: <AdminPanelSettingsIcon /> },
       { to: '/trash', label: 'Trash', icon: <DeleteOutlineIcon /> },
     ] : []),
   ];

@@ -26,7 +26,10 @@ trashRouter.get('/', (req, res) => {
     SELECT s.id, s.title, s.deleted_at, t.title AS task_title, t.deleted_at IS NOT NULL AS task_deleted
     FROM subtasks s JOIN tasks t ON t.id = s.task_id
     WHERE s.deleted_at IS NOT NULL`).all();
-  res.json({ projects, clients, developers, tasks, subtasks });
+  const admins = db.prepare(`
+    SELECT id, name, username, deleted_at FROM users
+    WHERE role = 'admin' AND deleted_at IS NOT NULL`).all();
+  res.json({ projects, clients, developers, admins, tasks, subtasks });
 });
 
 const notFound = (res) => res.status(404).json({ message: 'Item not found in Trash' });
@@ -74,4 +77,12 @@ trashRouter.post('/subtasks/:id/restore', (req, res) => {
   if (row.task_deleted) return res.status(409).json({ message: 'Its task is in the Trash; restore the task first' });
   db.prepare('UPDATE subtasks SET deleted_at = NULL WHERE id = ?').run(req.params.id);
   res.json({ message: 'Subtask restored' });
+});
+
+trashRouter.post('/admins/:id/restore', (req, res) => {
+  const { changes } = db.prepare(
+    `UPDATE users SET deleted_at = NULL WHERE id = ? AND role = 'admin' AND deleted_at IS NOT NULL`
+  ).run(req.params.id);
+  if (!changes) return notFound(res);
+  res.json({ message: 'Admin restored' });
 });

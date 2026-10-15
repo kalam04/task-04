@@ -8,6 +8,7 @@ import Projects from './pages/Projects';
 import Developers from './pages/Developers';
 import Trash from './pages/Trash';
 import Reports from './pages/Reports';
+import Admins from './pages/Admins';
 
 function ProtectedRoute({ children, adminOnly }) {
   const { user, loading } = useAuth();
@@ -30,6 +31,7 @@ export default function App() {
             <Route path="/projects" element={<ProtectedRoute adminOnly><Projects /></ProtectedRoute>} />
             <Route path="/developers" element={<ProtectedRoute adminOnly><Developers /></ProtectedRoute>} />
             <Route path="/trash" element={<ProtectedRoute adminOnly><Trash /></ProtectedRoute>} />
+            <Route path="/admins" element={<ProtectedRoute adminOnly><Admins /></ProtectedRoute>} />
             <Route path="/reports" element={<ProtectedRoute adminOnly><Reports /></ProtectedRoute>} />
           </Route>
           <Route path="*" element={<Navigate to="/tasks" replace />} />
