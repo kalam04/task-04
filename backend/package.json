@@ -10,7 +10,8 @@
     "seed": "node --env-file=.env src/seed.js",
     "seed:demo": "node src/seedDemo.js",
     "seed:demo:remove": "node src/seedDemo.js --remove",
-    "backup": "node --env-file-if-exists=.env src/backup.js"
+    "backup": "node --env-file-if-exists=.env src/backup.js",
+    "reset-password": "node --env-file-if-exists=.env src/resetPassword.js"
   },
   "keywords": [],
   "author": "",

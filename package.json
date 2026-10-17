@@ -6,7 +6,8 @@
     "install:all": "npm --prefix backend ci && npm --prefix frontend ci",
     "build": "npm --prefix frontend run build",
     "start": "npm --prefix backend run start",
-    "backup": "npm --prefix backend run backup"
+    "backup": "npm --prefix backend run backup",
+    "reset-password": "npm --prefix backend run reset-password --"
   },
   "engines": {
     "node": ">=24"

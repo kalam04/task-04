@@ -166,6 +166,17 @@ Open `https://tasks.yourcompany.com` — the login page should appear.
 3. **Admins** page: create a second admin, so you're never locked out.
 4. Add projects & clients, developers, and Marketing & Support members.
 
+**Can't log in / forgot a password?** On the server:
+
+```bash
+cd /opt/task-management
+npm run reset-password                  # lists the accounts
+npm run reset-password -- admin         # sets a new random password for "admin" and prints it
+```
+
+The `DEFAULT_USERNAME` / `DEFAULT_PASSWORD` in `.env` are only used to create the first admin when the
+database has none; changing them later doesn't change an existing password — use `reset-password`.
+
 ## Updating to a new version
 
 With GitHub (option A):
@@ -202,5 +213,7 @@ Database changes needed by a new version are applied automatically when the app 
 | "Invalid command 'ProxyPass'" | Modules not enabled — run the `a2enmod …` line from step 2, then reload Apache |
 | Apache's default page shows instead of the app | `ServerName` must match your domain, and `a2ensite task-management` must have been run |
 | Large file uploads fail | Make sure `LimitRequestBody 0` is in the site config (also in the `-le-ssl.conf` file Certbot created) |
+| Can't sign in | `npm run reset-password -- admin` in `/opt/task-management` (see step 8) |
+| App won't start: "JWT_SECRET is still the example value" | Put a real generated secret in `backend/.env` (step 4), then `pm2 restart task-management` |
 | Certbot fails | DNS isn't pointing to the server yet — wait and try again |
 | Apache error details | `sudo tail -50 /var/log/apache2/error.log` |

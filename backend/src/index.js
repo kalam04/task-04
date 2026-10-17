@@ -25,6 +25,11 @@ if (!process.env.JWT_SECRET || (isProduction && process.env.JWT_SECRET.length < 
   console.error('JWT_SECRET is missing or too short (use at least 32 random characters). See .env.example');
   process.exit(1);
 }
+// The example values are public (they're in the repository), so never run a live server with them
+if (isProduction && /change-me/i.test(process.env.JWT_SECRET)) {
+  console.error('JWT_SECRET is still the example value from .env.example. Generate a real one (see DEPLOY.md step 4).');
+  process.exit(1);
+}
 
 seedDefaultUser();
 
