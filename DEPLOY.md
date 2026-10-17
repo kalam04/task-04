@@ -100,6 +100,44 @@ Only ports 80/443 (and SSH) need to be open; keep port 4000 closed to the outsid
 sudo ufw allow OpenSSH && sudo ufw allow 'Nginx Full' && sudo ufw enable
 ```
 
+## 5b. Using Apache instead of Nginx
+
+Skip section 5 and do this instead (Ubuntu's `apache2`).
+
+```bash
+sudo apt-get install -y apache2
+sudo a2enmod proxy proxy_http headers rewrite ssl
+sudo ufw allow 'Apache Full'
+```
+
+Create `/etc/apache2/sites-available/task-management.conf`:
+
+```apache
+<VirtualHost *:80>
+    ServerName tasks.yourcompany.com
+
+    ProxyPreserveHost On
+    ProxyRequests Off
+    ProxyPass        / http://127.0.0.1:4000/
+    ProxyPassReverse / http://127.0.0.1:4000/
+    # Large uploads/downloads: no Apache size limit (the app enforces MAX_UPLOAD_MB) and long timeouts
+    LimitRequestBody 0
+    ProxyTimeout 3600
+    Timeout 3600
+    RequestHeader set X-Forwarded-Proto expr=%{REQUEST_SCHEME}
+</VirtualHost>
+```
+
+```bash
+sudo a2ensite task-management
+sudo apache2ctl configtest && sudo systemctl reload apache2
+sudo apt-get install -y certbot python3-certbot-apache
+sudo certbot --apache -d tasks.yourcompany.com     # free HTTPS, auto-renews; it creates the :443 site for you
+```
+
+If Apache already serves other websites on this server, they keep working; this only adds a new site for
+your task domain.
+
 ## 6. After the first login
 
 Sign in as `admin`, then use **your name (top right) → Change password**.
