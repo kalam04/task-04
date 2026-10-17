@@ -299,6 +299,7 @@ function AssignDialog({ task, developers, defaultId, onClose, onSave }) {
   );
 }
 
+const DEFAULT_STATUS = 'open';
 const FILTER_KEYS = ['q', 'project_id', 'developer_id', 'status', 'priority', 'created_by'];
 
 export default function Tasks() {
@@ -311,12 +312,16 @@ export default function Tasks() {
   const [developers, setDevelopers] = useState([]);
   // Filters live in the URL so other pages can link to a filtered list (e.g. a developer's open tasks)
   const [searchParams, setSearchParams] = useSearchParams();
-  const filters = useMemo(() => Object.fromEntries(FILTER_KEYS.map((k) => [k, searchParams.get(k) ?? ''])), [searchParams]);
+  // With no status in the URL the list shows unfinished tasks; "all" turns that off
+  const filters = useMemo(() => Object.fromEntries(FILTER_KEYS.map((k) => [k, searchParams.get(k) ?? (k === 'status' ? DEFAULT_STATUS : '')])), [searchParams]);
   const setFilters = (update) => {
     const next = typeof update === 'function' ? update(filters) : update;
-    setSearchParams(Object.fromEntries(Object.entries(next).filter(([, v]) => v)), { replace: true });
+    const status = next.status === undefined ? DEFAULT_STATUS : next.status || 'all';
+    const params = { ...next, status: status === DEFAULT_STATUS ? '' : status };
+    const p = Object.fromEntries(Object.entries(params).filter(([, v]) => v));
+    setSearchParams(p, { replace: true });
   };
-  const hasFilters = Object.values(filters).some(Boolean);
+  const hasFilters = Object.entries(filters).some(([k, v]) => (k === 'status' ? v !== DEFAULT_STATUS : Boolean(v)));
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [rejecting, setRejecting] = useState(null);
@@ -617,8 +622,8 @@ export default function Tasks() {
             {developers.map((d) => <MenuItem key={d.id} value={String(d.id)}>{d.name}{d.id === user.id ? ' (you)' : ''}</MenuItem>)}
           </TextField>
           <TextField size="small" select label="Status" value={filters.status} onChange={setFilter('status')} sx={{ flex: 1 }}>
-            <MenuItem value="">All</MenuItem>
             <MenuItem value="open">Open (Pending + In Progress)</MenuItem>
+            <MenuItem value="all">All statuses</MenuItem>
             {STATUSES.map((s) => <MenuItem key={s.value} value={s.value}>{s.label}</MenuItem>)}
           </TextField>
           <TextField size="small" select label="Priority" value={filters.priority} onChange={setFilter('priority')} sx={{ flex: 1 }}>

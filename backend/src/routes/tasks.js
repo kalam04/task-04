@@ -82,7 +82,7 @@ function buildFilters(query, { withStatus = true } = {}) {
   }
   // "open" = everything still to be finished
   if (withStatus && query.status === 'open') where.push(`t.status IN ('pending','in_progress')`);
-  else if (withStatus && query.status) {
+  else if (withStatus && query.status && query.status !== 'all') {
     where.push('t.status = ?');
     params.push(query.status);
   }
