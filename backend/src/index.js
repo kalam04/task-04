@@ -30,7 +30,7 @@ seedDefaultUser();
 
 const app = express();
 app.disable('x-powered-by');
-// Behind Nginx/a load balancer, trust it for the client IP (used by login protection)
+// Behind Apache/a reverse proxy, trust it for the client IP (used by login protection)
 if (process.env.TRUST_PROXY) app.set('trust proxy', process.env.TRUST_PROXY === 'true' ? 1 : process.env.TRUST_PROXY);
 // In production the app and API share one origin, so cross-origin requests are only allowed if configured
 app.use(cors({ origin: process.env.CORS_ORIGIN || !isProduction }));

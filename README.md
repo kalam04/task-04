@@ -49,7 +49,7 @@ Demo developers: `rahim`, `nusrat`, `tanvir` — password is `DEMO_PASSWORD` in 
 
 ## Production
 
-See **[DEPLOY.md](DEPLOY.md)** for putting it on a server (one Node process serves the app and API, Nginx for HTTPS, PM2 to keep it running).
+See **[DEPLOY.md](DEPLOY.md)** for putting it on a server (one Node process serves the app and API, Apache in front for HTTPS, PM2 to keep it running).
 
 ```bash
 npm run install:all && npm run build && npm start
