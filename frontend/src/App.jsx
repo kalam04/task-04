@@ -11,6 +11,7 @@ import Reports from './pages/Reports';
 import Admins from './pages/Admins';
 import MyDashboard from './pages/MyDashboard';
 import Staff from './pages/Staff';
+import Clients from './pages/Clients';
 
 // Where each role lands after signing in
 function Home() {
@@ -43,6 +44,7 @@ export default function App() {
             <Route path="/projects" element={<ProtectedRoute adminOnly><Projects /></ProtectedRoute>} />
             <Route path="/developers" element={<ProtectedRoute adminOnly><Developers /></ProtectedRoute>} />
             <Route path="/trash" element={<ProtectedRoute adminOnly><Trash /></ProtectedRoute>} />
+            <Route path="/clients" element={<ProtectedRoute adminOnly><Clients /></ProtectedRoute>} />
             <Route path="/staff" element={<ProtectedRoute adminOnly><Staff /></ProtectedRoute>} />
             <Route path="/admins" element={<ProtectedRoute adminOnly><Admins /></ProtectedRoute>} />
             <Route path="/reports" element={<ProtectedRoute roles={['admin', 'marketing', 'support']}><Reports /></ProtectedRoute>} />

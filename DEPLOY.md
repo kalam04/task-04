@@ -179,10 +179,11 @@ database has none; changing them later doesn't change an existing password — u
 
 ## Updating to a new version
 
-With GitHub (option A):
+With GitHub (option A) — make a backup first, then update:
 
 ```bash
 cd /opt/task-management
+npm run backup
 git pull
 npm run install:all
 npm run build

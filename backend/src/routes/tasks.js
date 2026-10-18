@@ -5,6 +5,7 @@ import { taskDetailsRouter } from './taskDetails.js';
 import { startTimer, stopTimer } from './timer.js';
 import { PRIORITY_LABELS, STATUS_LABELS, adminIds, logActivity, notify } from '../activity.js';
 import { cancelPendingRequests, createRequest } from './requests.js';
+import { canSeeTask, clientProjectIds, clientScope, clientUserIds, isClientUser } from '../access.js';
 
 export const tasksRouter = Router();
 
@@ -42,7 +43,8 @@ function validateTask(body, current) {
   const { title, project_id, client_id, developer_id, priority } = body ?? {};
   if (!title?.trim()) return 'Title is required';
   if (!db.prepare('SELECT id FROM projects WHERE id = ? AND deleted_at IS NULL').get(project_id)) return 'Valid project is required';
-  const client = client_id && db.prepare('SELECT deleted_at FROM clients WHERE id = ? AND project_id = ?').get(client_id, project_id);
+  const client = client_id && db.prepare(`SELECT c.deleted_at FROM clients c
+    JOIN project_clients pc ON pc.client_id = c.id AND pc.project_id = ? WHERE c.id = ?`).get(project_id, client_id);
   if (client_id && (!client || (client.deleted_at && current?.client_id !== Number(client_id)))) {
     return 'Client does not belong to the selected project';
   }
@@ -68,9 +70,14 @@ function forbidden(res) {
 }
 
 // WHERE clause shared by the list and the stats (stats ignore the status filter)
-function buildFilters(query, { withStatus = true } = {}) {
+function buildFilters(query, { withStatus = true, user } = {}) {
   const where = ['t.deleted_at IS NULL'];
   const params = [];
+  const scope = clientScope(user);
+  if (scope.sql) {
+    where.push(scope.sql);
+    params.push(...scope.params);
+  }
   if (query.created_by) {
     where.push('t.created_by = ?');
     params.push(query.created_by);
@@ -100,7 +107,7 @@ function buildFilters(query, { withStatus = true } = {}) {
 }
 
 tasksRouter.get('/', (req, res) => {
-  const { where, params } = buildFilters(req.query);
+  const { where, params } = buildFilters(req.query, { user: req.user });
   const sql = `${selectTask} WHERE ${where.join(' AND ')}
     ORDER BY CASE t.priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END,
       CASE t.status WHEN 'in_progress' THEN 0 WHEN 'pending' THEN 1 WHEN 'rejected' THEN 2 ELSE 3 END,
@@ -110,7 +117,7 @@ tasksRouter.get('/', (req, res) => {
 });
 
 tasksRouter.get('/stats', (req, res) => {
-  const { where, params } = buildFilters(req.query, { withStatus: false });
+  const { where, params } = buildFilters(req.query, { withStatus: false, user: req.user });
   const rows = db.prepare(`SELECT t.status, COUNT(*) AS count FROM tasks t WHERE ${where.join(' AND ')} GROUP BY t.status`)
     .all(...params);
   const stats = Object.fromEntries(STATUSES.map((s) => [s, 0]));
@@ -120,6 +127,7 @@ tasksRouter.get('/stats', (req, res) => {
 
 // Names already used in "Task provided by", for suggestions in the form
 tasksRouter.get('/provided-by-names', (req, res) => {
+  if (isClientUser(req.user)) return res.json([]);
   res.json(db.prepare(`
     SELECT provided_by AS name, COUNT(*) AS n FROM tasks
     WHERE provided_by IS NOT NULL AND deleted_at IS NULL
@@ -130,17 +138,26 @@ const cleanProvidedBy = (v) => (typeof v === 'string' ? v.trim().replace(/\s+/g,
 
 tasksRouter.get('/:id', (req, res) => {
   const task = getTask(req.params.id);
-  if (!task) return res.status(404).json({ message: 'Task not found' });
+  if (!canSeeTask(req.user, task)) return res.status(404).json({ message: 'Task not found' });
   res.json(task);
 });
 
 // Admins and developers can create tasks; a developer's new task defaults to themselves in the UI
 tasksRouter.post('/', (req, res) => {
+  if (isClientUser(req.user)) {
+    if (!clientProjectIds(req.user.client_id).includes(Number(req.body?.project_id))) {
+      return res.status(400).json({ message: 'Choose one of your projects' });
+    }
+    req.body = {
+      ...req.body, client_id: req.user.client_id, developer_id: null, request_developer_id: null,
+      provided_by: req.body?.provided_by?.trim() || req.user.name,
+    };
+  }
   const error = validateTask(req.body);
   if (error) return res.status(400).json({ message: error });
   const { title, description, project_id, client_id, priority, due_date } = req.body;
   // Marketing/Support don't assign; they can request a developer instead (below)
-  const developer_id = isStaff(req.user) ? null : req.body.developer_id;
+  const developer_id = isStaff(req.user) || isClientUser(req.user) ? null : req.body.developer_id;
   const { lastInsertRowid } = db.prepare(`
     INSERT INTO tasks (title, description, project_id, client_id, developer_id, priority, due_date, provided_by, created_by)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
@@ -261,7 +278,14 @@ tasksRouter.patch('/:id/status', (req, res) => {
           ? `${req.user.name} rejected "${task.title}": ${reject_reason.trim()}`
           : `${req.user.name} completed "${task.title}"${remarks ? `: ${remarks.length > 80 ? `${remarks.slice(0, 80)}…` : remarks}` : ''}`,
       });
-    } else if (!isDev) {
+    }
+    if (['in_progress', 'completed', 'rejected'].includes(status)) {
+      notify(clientUserIds(task.client_id), {
+        taskId: task.id, actorId: req.user.id, type: status === 'in_progress' ? 'status' : status,
+        message: `"${task.title}" is now ${STATUS_LABELS[status]}`,
+      });
+    }
+    if (!isDev) {
       notify([task.developer_id], {
         taskId: task.id, actorId: req.user.id, type: 'status',
         message: `${req.user.name} changed "${task.title}" to ${STATUS_LABELS[status]}`,
@@ -345,6 +369,7 @@ tasksRouter.patch('/:id/assign', (req, res) => {
   if (!task) return res.status(404).json({ message: 'Task not found' });
   const developerId = req.body?.developer_id || null;
   if (isStaff(req.user)) return res.status(403).json({ message: 'Request a developer instead; they can accept or decline' });
+  if (isClientUser(req.user)) return res.status(403).json({ message: 'Not allowed for client users' });
   if (req.user.role !== 'admin') {
     if (task.developer_id) return res.status(403).json({ message: 'This task is already assigned; only an admin can reassign it' });
     if (!developerId) return res.status(400).json({ message: 'Choose a developer' });

@@ -5,14 +5,22 @@ import { db } from './db.js';
 
 export const authRouter = Router();
 
-const publicUser = (u) => ({ id: u.id, username: u.username, name: u.name || u.username, role: u.role });
+const publicUser = (u) => ({
+  id: u.id, username: u.username, name: u.name || u.username, role: u.role,
+  ...(u.role === 'client' ? { client_id: u.client_id, client_name: u.client_name } : {}),
+});
+
+// Portal users of a deleted client company can't sign in or use the app
+const activeUserSql = `
+  SELECT u.*, c.name AS client_name FROM users u LEFT JOIN clients c ON c.id = u.client_id
+  WHERE u.deleted_at IS NULL AND (u.role != 'client' OR (c.id IS NOT NULL AND c.deleted_at IS NULL))`;
 
 export function requireAuth(req, res, next) {
   const token = req.headers.authorization?.replace(/^Bearer /, '');
   if (!token) return res.status(401).json({ message: 'Unauthorized' });
   try {
     const { id } = jwt.verify(token, process.env.JWT_SECRET);
-    const user = db.prepare('SELECT * FROM users WHERE id = ? AND deleted_at IS NULL').get(id);
+    const user = db.prepare(`${activeUserSql} AND u.id = ?`).get(id);
     if (!user) return res.status(401).json({ message: 'User no longer exists' });
     req.user = publicUser(user);
     next();
@@ -62,7 +70,7 @@ authRouter.post('/login', (req, res) => {
   if (loginLocked(key)) {
     return res.status(429).json({ message: `Too many failed attempts. Try again in ${LOCK_MINUTES} minutes.` });
   }
-  const user = db.prepare('SELECT * FROM users WHERE username = ? AND deleted_at IS NULL').get(username);
+  const user = db.prepare(`${activeUserSql} AND u.username = ?`).get(username);
   if (!user || !bcrypt.compareSync(password, user.password_hash)) {
     recordFailedLogin(key);
     return res.status(401).json({ message: 'Invalid username or password' });

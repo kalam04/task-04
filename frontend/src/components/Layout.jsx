@@ -7,6 +7,7 @@ import {
 import InsightsIcon from '@mui/icons-material/Insights';
 import DashboardIcon from '@mui/icons-material/Dashboard';
 import CampaignIcon from '@mui/icons-material/Campaign';
+import BusinessIcon from '@mui/icons-material/Business';
 import { ROLE_LABELS, isStaffRole } from './constants';
 import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings';
 import KeyIcon from '@mui/icons-material/Key';
@@ -41,6 +42,7 @@ export default function Layout() {
       { to: '/reports', label: 'Dashboard & Reports', icon: <InsightsIcon /> },
       { to: '/projects', label: 'Projects & Clients', icon: <FolderIcon /> },
       { to: '/developers', label: 'Developers', icon: <GroupIcon /> },
+      { to: '/clients', label: 'Clients', icon: <BusinessIcon /> },
       { to: '/staff', label: 'Marketing & Support', icon: <CampaignIcon /> },
       { to: '/admins', label: 'Admins', icon: <AdminPanelSettingsIcon /> },
       { to: '/trash', label: 'Trash', icon: <DeleteOutlineIcon /> },
@@ -76,7 +78,7 @@ export default function Layout() {
           <Button color="inherit" onClick={(e) => setUserMenu(e.currentTarget)} endIcon={<ArrowDropDownIcon />}
             sx={{ textTransform: 'none', ml: 1 }}>
             <Typography sx={{ display: { xs: 'none', sm: 'block' }, mr: 1 }}>{user.name || user.username}</Typography>
-            <Chip size="small" label={ROLE_LABELS[user.role] ?? user.role} sx={{ bgcolor: 'rgba(255,255,255,0.2)', color: 'inherit', cursor: 'pointer' }} />
+            <Chip size="small" label={user.role === 'client' ? `Client · ${user.client_name}` : ROLE_LABELS[user.role] ?? user.role} sx={{ bgcolor: 'rgba(255,255,255,0.2)', color: 'inherit', cursor: 'pointer' }} />
           </Button>
           <Menu anchorEl={userMenu} open={!!userMenu} onClose={() => setUserMenu(null)}
             anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }} transformOrigin={{ vertical: 'top', horizontal: 'right' }}>

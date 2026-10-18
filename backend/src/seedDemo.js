@@ -178,7 +178,8 @@ function addDemoStaff() {
     for (const t of STAFF_TASKS) {
       const author = staff[t.by];
       const clientId = t.client == null ? null
-        : db.prepare('SELECT id FROM clients WHERE project_id = ? AND deleted_at IS NULL ORDER BY id LIMIT 1 OFFSET ?').get(projectIds[t.project], t.client)?.id ?? null;
+        : db.prepare(`SELECT c.id FROM clients c JOIN project_clients pc ON pc.client_id = c.id
+            WHERE pc.project_id = ? AND c.deleted_at IS NULL ORDER BY c.id LIMIT 1 OFFSET ?`).get(projectIds[t.project], t.client)?.id ?? null;
       const dev = t.request ? devId(t.request.dev) : null;
       const assigned = t.request?.state === 'accepted' && dev ? dev : null;
       const taskId = db.prepare(`
@@ -207,18 +208,50 @@ function addDemoStaff() {
   });
 }
 
+// A client portal login: Padma Bank, linked to two demo projects
+const DEMO_CLIENT_USER = { username: 'padma', name: 'Karim (Padma Bank)', client: 'Padma Bank', alsoIn: 'Demo: Company CRM' };
+
+function addDemoClientUser() {
+  const u = DEMO_CLIENT_USER;
+  if (db.prepare('SELECT 1 FROM users WHERE username = ?').get(u.username)) {
+    console.log(`Demo client login already present (${u.username}).`);
+    return;
+  }
+  const client = db.prepare('SELECT id FROM clients WHERE name = ? AND deleted_at IS NULL').get(u.client);
+  const extra = db.prepare('SELECT id FROM projects WHERE name = ? AND deleted_at IS NULL').get(u.alsoIn);
+  if (!client) {
+    console.log('Padma Bank is missing, so no demo client login was added.');
+    return;
+  }
+  transaction(() => {
+    if (extra) db.prepare('INSERT OR IGNORE INTO project_clients (project_id, client_id) VALUES (?, ?)').run(extra.id, client.id);
+    db.prepare(`INSERT INTO users (username, name, password_hash, role, client_id) VALUES (?, ?, ?, 'client', ?)`)
+      .run(u.username, u.name, bcrypt.hashSync(DEMO_PASSWORD, 10), client.id);
+  });
+  console.log(`Added demo client login "${u.username}" for ${u.client}. Password is DEMO_PASSWORD in src/seedDemo.js.`);
+}
+
 function removeDemo() {
   transaction(() => {
     const projectIds = db.prepare(`SELECT id FROM projects WHERE name IN (${demoProjectNames.map(() => '?').join(',')})`)
       .all(...demoProjectNames).map((r) => r.id);
     for (const id of projectIds) {
       db.prepare('DELETE FROM tasks WHERE project_id = ?').run(id); // time slots + subtasks cascade
-      db.prepare('DELETE FROM clients WHERE project_id = ?').run(id);
+      // demo clients that aren't used by any other project
+      const clientIds = db.prepare('SELECT client_id FROM project_clients WHERE project_id = ?').all(id).map((r) => r.client_id);
+      db.prepare('DELETE FROM project_clients WHERE project_id = ?').run(id);
+      for (const cid of clientIds) {
+        if (!db.prepare('SELECT 1 FROM project_clients WHERE client_id = ?').get(cid) && !db.prepare('SELECT 1 FROM tasks WHERE client_id = ?').get(cid)) {
+          db.prepare(`DELETE FROM users WHERE role = 'client' AND client_id = ?`).run(cid);
+          db.prepare('DELETE FROM clients WHERE id = ?').run(cid);
+        }
+      }
       db.prepare('DELETE FROM projects WHERE id = ?').run(id);
     }
     const userIds = db.prepare(`SELECT id FROM users WHERE role = 'developer' AND username IN (${demoUsernames.map(() => '?').join(',')})`)
       .all(...demoUsernames).map((r) => r.id);
     for (const id of userIds) db.prepare('DELETE FROM users WHERE id = ?').run(id);
+    db.prepare(`DELETE FROM users WHERE role = 'client' AND username = ?`).run(DEMO_CLIENT_USER.username);
     const staffIds = db.prepare(`SELECT id FROM users WHERE role IN ('marketing','support') AND username IN (${staffUsernames.map(() => '?').join(',')})`)
       .all(...staffUsernames).map((r) => r.id);
     for (const id of staffIds) {
@@ -245,8 +278,14 @@ function addDemo() {
     }
     const projects = PROJECTS.map((p) => {
       const id = db.prepare('INSERT INTO projects (name, description) VALUES (?, ?)').run(p.name, p.description).lastInsertRowid;
-      const clientIds = p.clients.map((c) => db.prepare('INSERT INTO clients (project_id, name, email, phone) VALUES (?, ?, ?, ?)')
-        .run(id, c.name, c.email ?? null, c.phone ?? null).lastInsertRowid);
+      const clientIds = p.clients.map((c) => {
+        // reuse a client company with the same name, otherwise create it; then link it to this project
+        const existing = db.prepare('SELECT id FROM clients WHERE lower(name) = lower(?) AND deleted_at IS NULL').get(c.name);
+        const cid = existing?.id ?? db.prepare('INSERT INTO clients (name, email, phone) VALUES (?, ?, ?)')
+          .run(c.name, c.email ?? null, c.phone ?? null).lastInsertRowid;
+        db.prepare('INSERT OR IGNORE INTO project_clients (project_id, client_id) VALUES (?, ?)').run(id, cid);
+        return cid;
+      });
       return { id, clientIds };
     });
 
@@ -286,4 +325,5 @@ else if (process.env.NODE_ENV === 'production') {
 } else {
   addDemo();
   addDemoStaff();
+  addDemoClientUser();
 }

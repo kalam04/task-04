@@ -36,7 +36,8 @@ import ConfirmDialog from '../components/ConfirmDialog';
 const emptyTask = { title: '', description: '', project_id: '', client_id: '', developer_id: '', priority: 'medium', due_date: '', provided_by: '' };
 
 // Developers create tasks too (assigned to themselves by default); when editing they can't reassign
-function TaskFormDialog({ open, task, projects, developers, isAdmin, isStaff, userId, onClose, onSaved }) {
+// Client users: pick one of their projects; their company, the assignee and "provided by" are set for them
+function TaskFormDialog({ open, task, projects, developers, isAdmin, isStaff, isClient, userId, onClose, onSaved }) {
   const [form, setForm] = useState(emptyTask);
   const [clients, setClients] = useState([]);
   const [error, setError] = useState('');
@@ -52,7 +53,7 @@ function TaskFormDialog({ open, task, projects, developers, isAdmin, isStaff, us
     api.get('/tasks/provided-by-names').then((r) => setProviderNames(r.data)).catch(() => {});
     setForm(task ? {
       ...emptyTask, ...Object.fromEntries(Object.keys(emptyTask).map((k) => [k, task[k] ?? ''])),
-    } : { ...emptyTask, developer_id: isAdmin || isStaff ? '' : userId, request_developer_id: '', request_message: '' });
+    } : { ...emptyTask, developer_id: isAdmin || isStaff || isClient ? '' : userId, request_developer_id: '', request_message: '' });
   }, [open, task, isAdmin, isStaff, userId]);
 
   useEffect(() => {
@@ -108,9 +109,11 @@ function TaskFormDialog({ open, task, projects, developers, isAdmin, isStaff, us
           <TextField label="Title" required value={form.title} onChange={set('title')} autoFocus />
           <TextField label="Description" multiline minRows={3} value={form.description} onChange={set('description')} />
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-            <TextField select label="Project" required fullWidth value={form.project_id} onChange={set('project_id')}>
+            <TextField select label="Project" required fullWidth value={form.project_id} onChange={set('project_id')}
+              helperText={isClient ? 'Which of your projects is this for?' : ' '}>
               {projects.map((p) => <MenuItem key={p.id} value={p.id}>{p.name}</MenuItem>)}
             </TextField>
+            {!isClient && (
             <TextField select label="Client (optional)" fullWidth value={form.client_id} onChange={set('client_id')}
               disabled={!form.project_id} helperText={form.project_id && !clients.length ? 'No clients in this project' : ''}>
               <MenuItem value=""><em>None</em></MenuItem>
@@ -119,15 +122,18 @@ function TaskFormDialog({ open, task, projects, developers, isAdmin, isStaff, us
                 <MenuItem value={task.client_id}>{task.client_name} (deleted)</MenuItem>
               )}
             </TextField>
+            )}
           </Stack>
+          {!isClient && (
           <Autocomplete freeSolo options={providerNames} value={form.provided_by ?? ''}
             onInputChange={(e, value) => setForm((f) => ({ ...f, provided_by: value }))}
             renderInput={(params) => (
               <TextField {...params} label="Task provided by (optional)"
                 helperText="Who gave or asked for this task — any name, e.g. a client contact or manager" />
             )} />
+          )}
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-            {isStaff && !task ? (
+            {isClient ? null : isStaff && !task ? (
               <TextField select label="Request a developer (optional)" fullWidth value={form.request_developer_id ?? ''}
                 onChange={set('request_developer_id')} helperText="They'll be asked to accept or decline">
                 <MenuItem value=""><em>No request — leave unassigned</em></MenuItem>
@@ -355,6 +361,7 @@ export default function Tasks() {
   // Everyone sees every task, but only the assignee (or an admin) can change it
   const canEdit = (t) => isAdmin || t.developer_id === user.id;
   const isStaff = isStaffRole(user.role);
+  const isClient = user.role === 'client';
   // Task details (title, description, priority, due date…): admins, Marketing/Support, and the assignee
   const canEditDetails = (t) => isAdmin || isStaff || (t.developer_id === user.id && !['completed', 'rejected'].includes(t.status));
 
@@ -616,11 +623,13 @@ export default function Tasks() {
             <MenuItem value="">All</MenuItem>
             {projects.map((p) => <MenuItem key={p.id} value={p.id}>{p.name}</MenuItem>)}
           </TextField>
+          {!isClient && (
           <TextField size="small" select label="Developer" value={filters.developer_id} onChange={setFilter('developer_id')} sx={{ flex: 1 }}>
             <MenuItem value="">All</MenuItem>
             <MenuItem value="none"><em>Unassigned</em></MenuItem>
             {developers.map((d) => <MenuItem key={d.id} value={String(d.id)}>{d.name}{d.id === user.id ? ' (you)' : ''}</MenuItem>)}
           </TextField>
+          )}
           <TextField size="small" select label="Status" value={filters.status} onChange={setFilter('status')} sx={{ flex: 1 }}>
             <MenuItem value="open">Open (Pending + In Progress)</MenuItem>
             <MenuItem value="all">All statuses</MenuItem>
@@ -722,7 +731,11 @@ export default function Tasks() {
                   </TableCell>
                   <TableCell sx={{ whiteSpace: 'nowrap' }}><TimeTaken task={t} now={now} /></TableCell>
                   <TableCell><DueDate task={t} /></TableCell>
-                  <TableCell align="right">{isAdmin ? adminActions(t) : isStaff ? staffActions(t) : devActions(t)}</TableCell>
+                  <TableCell align="right">
+                    {isAdmin ? adminActions(t) : isStaff ? staffActions(t) : isClient
+                      ? <Stack direction="row" sx={{ justifyContent: 'flex-end' }}>{detailButtons(t)}</Stack>
+                      : devActions(t)}
+                  </TableCell>
                 </TableRow>
               );
             })}
@@ -774,7 +787,7 @@ export default function Tasks() {
         onDone={(msg) => { setRequesting(null); notify(msg); load(); }} />
       <DeclineRequestDialog request={declining} onClose={() => setDeclining(null)}
         onConfirm={(reason) => { requestAction(declining, 'decline', reason); setDeclining(null); }} />
-      <TaskFormDialog open={formOpen} task={editing} projects={projects} developers={developers} isAdmin={isAdmin} isStaff={isStaff} userId={user.id}
+      <TaskFormDialog open={formOpen} task={editing} projects={projects} developers={developers} isAdmin={isAdmin} isStaff={isStaff} isClient={isClient} userId={user.id}
         onClose={() => setFormOpen(false)} onSaved={(msg, severity) => { setFormOpen(false); notify(msg, severity); load(); }} />
       <CompleteDialog task={completing} onClose={() => setCompleting(null)}
         onConfirm={(remarks) => { changeStatus(completing, 'completed', undefined, remarks); setCompleting(null); }} />

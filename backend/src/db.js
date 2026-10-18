@@ -214,3 +214,61 @@ db.exec(`
 if (!db.prepare('PRAGMA table_info(tasks)').all().some((c) => c.name === 'provided_by')) {
   db.exec('ALTER TABLE tasks ADD COLUMN provided_by TEXT');
 }
+
+// Clients are shared companies: one client can be on many projects (project_clients), and a
+// client company can have portal logins (users.role = 'client', users.client_id).
+db.exec(`
+  CREATE TABLE IF NOT EXISTS project_clients (
+    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (project_id, client_id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_project_clients_client ON project_clients(client_id);
+`);
+if (!db.prepare('PRAGMA table_info(users)').all().some((c) => c.name === 'client_id')) {
+  db.exec('ALTER TABLE users ADD COLUMN client_id INTEGER REFERENCES clients(id)');
+}
+
+// Old layout had one client row per project (clients.project_id). Convert: clients with the same
+// name become one company linked to each of their projects; tasks point at that company.
+if (db.prepare('PRAGMA table_info(clients)').all().some((c) => c.name === 'project_id')) {
+  db.exec('PRAGMA foreign_keys = OFF'); // rebuilding the table must not cascade into tasks
+  try {
+    transaction(() => {
+      const rows = db.prepare('SELECT * FROM clients ORDER BY id').all();
+      const groups = new Map();
+      for (const r of rows) {
+        const key = r.name.trim().toLowerCase();
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(r);
+      }
+      db.exec(`CREATE TABLE clients_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        email TEXT,
+        phone TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        deleted_at TEXT
+      )`);
+      const insertClient = db.prepare('INSERT INTO clients_new (id, name, email, phone, created_at, deleted_at) VALUES (?, ?, ?, ?, ?, ?)');
+      const link = db.prepare('INSERT OR IGNORE INTO project_clients (project_id, client_id) VALUES (?, ?)');
+      const remap = db.prepare('UPDATE tasks SET client_id = ? WHERE client_id = ?');
+      for (const group of groups.values()) {
+        const active = group.filter((r) => !r.deleted_at);
+        const keep = active[0] ?? group[0];
+        insertClient.run(keep.id, keep.name.trim(), group.find((r) => r.email)?.email ?? null,
+          group.find((r) => r.phone)?.phone ?? null, keep.created_at,
+          active.length ? null : group.map((r) => r.deleted_at).sort()[0]);
+        // Projects where this client was still active (or all of them, if the client was fully deleted)
+        for (const r of active.length ? active : group) link.run(r.project_id, keep.id);
+        for (const r of group) if (r.id !== keep.id) remap.run(keep.id, r.id);
+      }
+      db.exec('DROP TABLE clients; ALTER TABLE clients_new RENAME TO clients;');
+    });
+  } finally {
+    db.exec('PRAGMA foreign_keys = ON');
+  }
+  const problems = db.prepare('PRAGMA foreign_key_check').all();
+  if (problems.length) console.error('Foreign key problems after client migration:', problems);
+}

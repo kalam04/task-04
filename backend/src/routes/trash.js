@@ -7,13 +7,18 @@ export const trashRouter = Router();
 trashRouter.get('/', (req, res) => {
   const projects = db.prepare(`
     SELECT id, name, description, deleted_at,
-      (SELECT COUNT(*) FROM clients c WHERE c.project_id = p.id AND c.deleted_at = p.deleted_at) AS client_count,
+      (SELECT COUNT(*) FROM project_clients pc WHERE pc.project_id = p.id) AS client_count,
       (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.deleted_at = p.deleted_at) AS task_count
     FROM projects p WHERE deleted_at IS NOT NULL`).all();
   const clients = db.prepare(`
-    SELECT c.id, c.name, c.email, c.deleted_at, p.name AS project_name, p.deleted_at IS NOT NULL AS project_deleted
-    FROM clients c JOIN projects p ON p.id = c.project_id
-    WHERE c.deleted_at IS NOT NULL`).all();
+    SELECT c.id, c.name, c.email, c.deleted_at,
+      (SELECT group_concat(p.name, ', ') FROM project_clients pc JOIN projects p ON p.id = pc.project_id WHERE pc.client_id = c.id) AS project_name,
+      0 AS project_deleted
+    FROM clients c WHERE c.deleted_at IS NOT NULL`).all();
+  const clientUsers = db.prepare(`
+    SELECT u.id, u.name, u.username, u.deleted_at, c.name AS client_name, c.deleted_at IS NOT NULL AS client_deleted
+    FROM users u LEFT JOIN clients c ON c.id = u.client_id
+    WHERE u.role = 'client' AND u.deleted_at IS NOT NULL`).all();
   const developers = db.prepare(`
     SELECT id, name, username, deleted_at FROM users
     WHERE role = 'developer' AND deleted_at IS NOT NULL`).all();
@@ -36,7 +41,7 @@ trashRouter.get('/', (req, res) => {
   const staff = db.prepare(`
     SELECT id, name, username, role, deleted_at FROM users
     WHERE role IN ('marketing','support') AND deleted_at IS NOT NULL`).all();
-  res.json({ projects, clients, developers, admins, staff, tasks, subtasks, files });
+  res.json({ projects, clients, clientUsers, developers, admins, staff, tasks, subtasks, files });
 });
 
 const notFound = (res) => res.status(404).json({ message: 'Item not found in Trash' });
@@ -49,14 +54,25 @@ trashRouter.post('/projects/:id/restore', (req, res) => {
   if (!project) return notFound(res);
   transaction(() => {
     // Bring back the clients and tasks that were trashed together with the project
-    db.prepare('UPDATE clients SET deleted_at = NULL WHERE project_id = ? AND deleted_at = ?').run(req.params.id, project.deleted_at);
     db.prepare('UPDATE tasks SET deleted_at = NULL WHERE project_id = ? AND deleted_at = ?').run(req.params.id, project.deleted_at);
     db.prepare('UPDATE projects SET deleted_at = NULL WHERE id = ?').run(req.params.id);
   });
   res.json({ message: 'Project restored' });
 });
 
-for (const [type, table, label] of [['clients', 'clients', 'Client'], ['tasks', 'tasks', 'Task']]) {
+trashRouter.post('/clients/:id/restore', (req, res) => {
+  const { changes } = db.prepare('UPDATE clients SET deleted_at = NULL WHERE id = ? AND deleted_at IS NOT NULL').run(req.params.id);
+  if (!changes) return notFound(res);
+  res.json({ message: 'Client restored' });
+});
+
+trashRouter.post('/clientUsers/:id/restore', (req, res) => {
+  const { changes } = db.prepare(`UPDATE users SET deleted_at = NULL WHERE id = ? AND role = 'client' AND deleted_at IS NOT NULL`).run(req.params.id);
+  if (!changes) return notFound(res);
+  res.json({ message: 'Portal user restored' });
+});
+
+for (const [type, table, label] of [['tasks', 'tasks', 'Task']]) {
   trashRouter.post(`/${type}/:id/restore`, (req, res) => {
     if (projectDeletedFor(table, req.params.id)) {
       return res.status(409).json({ message: `Its project is in the Trash; restore the project first` });

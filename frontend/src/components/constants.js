@@ -79,6 +79,6 @@ export const projectColorFn = (projects) => {
   };
 };
 
-export const ROLE_LABELS = { admin: 'Admin', developer: 'Developer', marketing: 'Marketing', support: 'Support' };
+export const ROLE_LABELS = { admin: 'Admin', developer: 'Developer', marketing: 'Marketing', support: 'Support', client: 'Client' };
 // Marketing and Support: see and create tasks, edit any task's details, request developers
 export const isStaffRole = (role) => role === 'marketing' || role === 'support';

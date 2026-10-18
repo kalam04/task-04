@@ -16,6 +16,7 @@ import HowToRegIcon from '@mui/icons-material/HowToReg';
 import PersonOffIcon from '@mui/icons-material/PersonOff';
 import { api } from '../api/client';
 import { timeAgo } from './constants';
+import { useAuth } from '../context/AuthContext';
 
 const ICONS = {
   assigned: <AssignmentIndIcon color="primary" />,
@@ -36,6 +37,7 @@ const POLL_MS = 30000;
 
 export default function NotificationsBell() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [anchor, setAnchor] = useState(null);
   const [data, setData] = useState({ unread: 0, items: [] });
 
@@ -49,7 +51,9 @@ export default function NotificationsBell() {
   const open = (n) => {
     setAnchor(null);
     if (!n.is_read) api.post(`/notifications/${n.id}/read`).then(load);
-    if (n.task_id && !n.task_deleted) navigate(`/tasks?task=${n.task_id}&tab=${n.type === 'comment' ? 'comments' : n.type === 'attachment' ? 'files' : 'history'}`);
+    // Client users have no History tab, so their status updates open the comments
+    const fallback = user?.role === 'client' ? 'comments' : 'history';
+    if (n.task_id && !n.task_deleted) navigate(`/tasks?task=${n.task_id}&tab=${n.type === 'comment' ? 'comments' : n.type === 'attachment' ? 'files' : fallback}`);
   };
 
   const readAll = () => api.post('/notifications/read-all').then(load);

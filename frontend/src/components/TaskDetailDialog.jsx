@@ -413,7 +413,9 @@ export default function TaskDetailDialog({ task, tab, onTabChange, isAdmin, canE
         <RemarksBox task={task} canEdit={canEdit} onChanged={onChanged} notify={notify} />
         {!canEdit && task.request_developer_id !== user.id && (
           <Alert severity="info" sx={{ mt: 1.5 }}>
-            {isStaffRole(user.role)
+            {user.role === 'client'
+              ? <>You can follow progress here, comment and attach files. Our team handles status and time.</>
+              : isStaffRole(user.role)
               ? <>Status, time and subtasks are handled by {task.developer_name ?? 'the assigned developer'}. You can edit the details (Edit in the list), comment and attach files.</>
               : <>View only — {task.developer_name ? `assigned to ${task.developer_name}` : 'assign this task to make changes'}. You can still comment and attach files.</>}
           </Alert>
@@ -424,7 +426,7 @@ export default function TaskDetailDialog({ task, tab, onTabChange, isAdmin, canE
         <Tab value="files" label={`Files${task.attachment_count ? ` (${task.attachment_count})` : ''}`} />
         <Tab value="subtasks" label={`Subtasks (${task.subtask_done}/${task.subtask_total})`} />
         <Tab value="time" label="Time log" />
-        <Tab value="history" label="History" />
+        {user.role !== 'client' && <Tab value="history" label="History" />}
       </Tabs>
       <DialogContent sx={{ minHeight: 320 }}>
         {tab === 'comments' && <CommentsTab task={task} onChanged={onChanged} notify={notify} />}

@@ -10,7 +10,8 @@ import { errorMessage } from '../components/constants';
 const TYPES = [
   { key: 'tasks', label: 'Tasks', title: (i) => i.title, detail: (i) => `Project: ${i.project_name}`, blocked: (i) => i.project_deleted },
   { key: 'projects', label: 'Projects', title: (i) => i.name, detail: (i) => `Includes ${i.client_count} client(s), ${i.task_count} task(s)` },
-  { key: 'clients', label: 'Clients', title: (i) => i.name, detail: (i) => `Project: ${i.project_name}`, blocked: (i) => i.project_deleted },
+  { key: 'clients', label: 'Clients', title: (i) => i.name, detail: (i) => (i.project_name ? `Projects: ${i.project_name}` : 'No projects') },
+  { key: 'clientUsers', label: 'Client logins', title: (i) => i.name, detail: (i) => `${i.client_name ?? '—'} · Username: ${i.username}`, blocked: (i) => i.client_deleted, blockedText: 'Restore its client first' },
   { key: 'developers', label: 'Developers', title: (i) => i.name, detail: (i) => `Username: ${i.username}` },
   { key: 'staff', label: 'Marketing & Support', title: (i) => i.name, detail: (i) => `${i.role === 'marketing' ? 'Marketing' : 'Support'} · Username: ${i.username}` },
   { key: 'admins', label: 'Admins', title: (i) => i.name, detail: (i) => `Username: ${i.username}` },

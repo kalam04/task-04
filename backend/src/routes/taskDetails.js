@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { db, transaction } from '../db.js';
 import { canEditTask, getTask } from './tasks.js';
+import { canSeeTask, clientUserIds } from '../access.js';
 import { runningEntry, startTimer, stopTimer } from './timer.js';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -15,7 +16,7 @@ export const taskDetailsRouter = Router({ mergeParams: true });
 // (or an admin) can change them.
 taskDetailsRouter.use((req, res, next) => {
   const task = getTask(req.params.taskId);
-  if (!task) return res.status(404).json({ message: 'Task not found' });
+  if (!canSeeTask(req.user, task)) return res.status(404).json({ message: 'Task not found' });
   // Comments and file attachments are open to anyone who can see the task
   const isShared = req.path.startsWith('/comments') || req.path.startsWith('/attachments');
   if (req.method !== 'GET' && !isShared && !canEditTask(req.user, task)) {
@@ -155,6 +156,9 @@ taskDetailsRouter.post('/timer/start', requireEditable('completed', 'rejected'),
     if (req.task.status === 'pending') {
       db.prepare(`UPDATE tasks SET status = 'in_progress', updated_at = CURRENT_TIMESTAMP WHERE id = ?`).run(req.task.id);
       logActivity(req.task.id, req.user.id, 'started working (Pending → In Progress)');
+      notify(clientUserIds(req.task.client_id), {
+        taskId: req.task.id, actorId: req.user.id, type: 'status', message: `"${req.task.title}" is now In Progress`,
+      });
     }
   });
   res.json(getTask(req.task.id));
@@ -188,7 +192,7 @@ taskDetailsRouter.post('/comments', (req, res) => {
   const commenters = db.prepare('SELECT DISTINCT user_id FROM task_comments WHERE task_id = ? AND deleted_at IS NULL')
     .all(req.task.id).map((r) => r.user_id);
   const preview = body.length > 80 ? `${body.slice(0, 80)}…` : body;
-  notify([req.task.developer_id, ...adminIds(), ...commenters], {
+  notify([req.task.developer_id, ...adminIds(), ...commenters, ...clientUserIds(req.task.client_id)], {
     taskId: req.task.id, actorId: req.user.id, type: 'comment',
     message: `${req.user.name} commented on "${req.task.title}": ${preview}`,
   });
@@ -222,6 +226,7 @@ taskDetailsRouter.delete('/comments/:commentId', (req, res) => {
 /* ---------- History ---------- */
 
 taskDetailsRouter.get('/activity', (req, res) => {
+  if (req.user.role === 'client') return res.json([]);
   res.json(db.prepare(`
     SELECT a.id, a.message, a.created_at, u.name AS user_name FROM task_activity a
     LEFT JOIN users u ON u.id = a.user_id
@@ -266,7 +271,7 @@ taskDetailsRouter.post('/attachments', (req, res) => {
     });
     const what = isVoice ? 'a voice note' : names.length === 1 ? `"${names[0]}"` : `${names.length} files`;
     logActivity(req.task.id, req.user.id, `attached ${what}`);
-    notify([req.task.developer_id, ...adminIds()], {
+    notify([req.task.developer_id, ...adminIds(), ...clientUserIds(req.task.client_id)], {
       taskId: req.task.id, actorId: req.user.id, type: 'attachment',
       message: `${req.user.name} attached ${what} to "${req.task.title}"`,
     });

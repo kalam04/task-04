@@ -13,6 +13,7 @@ const selectDeveloper = `
 
 // Any signed-in user can list developers (needed for assignment dropdowns)
 developersRouter.get('/', (req, res) => {
+  if (req.user.role === 'client') return res.json([]);
   res.json(db.prepare(`${selectDeveloper} ORDER BY u.name`).all());
 });
 
