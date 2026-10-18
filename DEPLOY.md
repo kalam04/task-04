@@ -61,9 +61,26 @@ npm run install:all
 npm run build
 ```
 
+### If the code lives inside Apache's web root (e.g. `/var/www/html/task`)
+
+Apache's default site would serve the folder as plain files — including `backend/.env` (secrets) and the
+database. Block it (the app is reached through the proxy below, so nothing else changes):
+
+```bash
+sudo tee /etc/apache2/conf-available/block-task-app.conf > /dev/null <<'CONF'
+<Directory /var/www/html/task>
+    Require all denied
+</Directory>
+CONF
+sudo a2enconf block-task-app && sudo systemctl reload apache2
+curl -s -o /dev/null -w "%{http_code}\n" http://localhost/task/backend/.env    # must print 403
+```
+
+Keeping the database and uploads outside the web root (`DB_PATH` / `UPLOAD_DIR` below) is safer still.
+
 ## 4. Configure
 
-Folders for the database, attached files and backups — outside the code folder, so updates never touch them:
+Folders for the database, attached files and backups — outside the code folder, so updates never touch them (the commands below use `/opt/task-management`; if your code is elsewhere, e.g. `/var/www/html/task`, use that path):
 
 ```bash
 sudo mkdir -p /var/lib/task-management/uploads /var/backups/task-management

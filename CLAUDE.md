@@ -6,13 +6,17 @@ Roles: admin, developer, marketing, support, client. See `README.md` for feature
 
 ## Is this the live server?
 
-If the project lives at `/opt/task-management` and `backend/.env` contains `NODE_ENV=production`, you are on the
+If the project lives at `/var/www/html/task` and `backend/.env` contains `NODE_ENV=production`, you are on the
 **live server** (https://task.yetfix.com). Real users depend on it — be careful.
 
 Live server facts:
-- Code: `/opt/task-management` (a clone of https://github.com/kalam04/task-04, branch `main`)
+- Code: `/var/www/html/task` (a clone of https://github.com/kalam04/task-04, branch `main`)
 - Settings: `backend/.env` — **never print, change or commit it** (it holds secrets)
-- Data: database and uploaded files in `/var/lib/task-management` (`DB_PATH`, `UPLOAD_DIR`) — **never delete, move or edit**
+- Data: database and uploaded files at the paths in `DB_PATH` / `UPLOAD_DIR` in `backend/.env` (default: `backend/data.db`
+  and `backend/uploads`) — **never delete, move or edit**
+- The code is inside Apache's web root, so Apache must **deny direct access** to this folder
+  (`/etc/apache2/conf-available/block-task-app.conf`, see DEPLOY.md). Check with
+  `curl -s -o /dev/null -w "%{http_code}\n" http://localhost/task/backend/.env` → must be `403`, never `200`.
 - Backups: `/var/backups/task-management` (daily, automatic)
 - Process: PM2 app `task-management` (port 4000); Apache reverse proxy + Certbot HTTPS in front
 
@@ -21,7 +25,7 @@ Live server facts:
 When asked to update / deploy / pull the latest version, run:
 
 ```bash
-cd /opt/task-management && npm run deploy
+cd /var/www/html/task && npm run deploy
 ```
 
 `scripts/deploy.sh` backs up the database, `git stash`es any edits made directly on the server (they are kept in
