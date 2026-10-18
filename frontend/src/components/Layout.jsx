@@ -9,6 +9,7 @@ import DashboardIcon from '@mui/icons-material/Dashboard';
 import CampaignIcon from '@mui/icons-material/Campaign';
 import BusinessIcon from '@mui/icons-material/Business';
 import { ROLE_LABELS, isStaffRole } from './constants';
+import { version as APP_VERSION } from '../../package.json';
 import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings';
 import KeyIcon from '@mui/icons-material/Key';
 import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown';
@@ -103,9 +104,16 @@ export default function Layout() {
       >
         {drawer}
       </Drawer>
-      <Box component="main" sx={{ flexGrow: 1, minWidth: 0, p: { xs: 2, md: 3 }, bgcolor: 'grey.50', minHeight: '100vh' }}>
+      <Box component="main" sx={{ flexGrow: 1, minWidth: 0, p: { xs: 2, md: 3 }, pb: 0, bgcolor: 'grey.50', minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
         <Toolbar />
-        <Outlet />
+        <Box sx={{ flexGrow: 1 }}><Outlet /></Box>
+        <Box component="footer" sx={{
+          mt: 3, py: 2, borderTop: 1, borderColor: 'divider', display: 'flex', flexWrap: 'wrap', gap: 1,
+          justifyContent: 'space-between', color: 'text.secondary', fontSize: 14,
+        }}>
+          <span>Copyright © {new Date().getFullYear()} <Box component="b" sx={{ color: 'primary.main' }}>Yetfix LTD.</Box> All rights reserved.</span>
+          <span>Version <b>{APP_VERSION}</b></span>
+        </Box>
         <ChangePasswordDialog open={passwordOpen} onClose={() => setPasswordOpen(false)}
           onChanged={() => { setPasswordOpen(false); setToast('Password changed'); }} />
         <Snackbar open={!!toast} autoHideDuration={3000} onClose={() => setToast('')} anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}>

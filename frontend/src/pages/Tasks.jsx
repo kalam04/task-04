@@ -115,11 +115,19 @@ function TaskFormDialog({ open, task, projects, developers, isAdmin, isStaff, is
             </TextField>
             {!isClient && (
             <TextField select label="Client (optional)" fullWidth value={form.client_id} onChange={set('client_id')}
-              disabled={!form.project_id} helperText={form.project_id && !clients.length ? 'No clients in this project' : ''}>
+              disabled={!form.project_id}
+              helperText={form.project_id && !clients.length
+                ? `No clients linked to this project${isAdmin ? ' — add them on Projects & Clients' : ''}` : ' '}>
               <MenuItem value=""><em>None</em></MenuItem>
               {clients.map((c) => <MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>)}
-              {!!task?.client_deleted && task.project_id === form.project_id && (
-                <MenuItem value={task.client_id}>{task.client_name} (deleted)</MenuItem>
+              {/* Keep showing the task's current client even if it was deleted or removed from this project */}
+              {task?.client_id && task.project_id === form.project_id && !clients.some((c) => c.id === task.client_id) && (
+                <MenuItem value={task.client_id}>
+                  {task.client_name} ({task.client_deleted ? 'deleted' : 'not linked to this project'})
+                </MenuItem>
+              )}
+              {form.project_id && !clients.length && !task?.client_id && (
+                <MenuItem disabled><em>No clients linked to this project</em></MenuItem>
               )}
             </TextField>
             )}

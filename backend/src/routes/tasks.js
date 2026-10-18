@@ -43,9 +43,10 @@ function validateTask(body, current) {
   const { title, project_id, client_id, developer_id, priority } = body ?? {};
   if (!title?.trim()) return 'Title is required';
   if (!db.prepare('SELECT id FROM projects WHERE id = ? AND deleted_at IS NULL').get(project_id)) return 'Valid project is required';
+  const keepingClient = current && current.client_id === Number(client_id) && current.project_id === Number(project_id);
   const client = client_id && db.prepare(`SELECT c.deleted_at FROM clients c
     JOIN project_clients pc ON pc.client_id = c.id AND pc.project_id = ? WHERE c.id = ?`).get(project_id, client_id);
-  if (client_id && (!client || (client.deleted_at && current?.client_id !== Number(client_id)))) {
+  if (client_id && !keepingClient && (!client || client.deleted_at)) {
     return 'Client does not belong to the selected project';
   }
   const dev = developer_id && db.prepare(`SELECT deleted_at FROM users WHERE id = ? AND role = 'developer'`).get(developer_id);
