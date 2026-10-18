@@ -17,7 +17,7 @@ Live server facts:
 - The code is inside Apache's web root, so Apache must **deny direct access** to this folder
   (`/etc/apache2/conf-available/block-task-app.conf`, see DEPLOY.md). Check with
   `curl -s -o /dev/null -w "%{http_code}\n" http://localhost/task/backend/.env` → must be `403`, never `200`.
-- Backups: `/var/backups/task-management` (daily, automatic)
+- Backups: daily and automatic, in `BACKUP_DIR` from `backend/.env` (default: `backend/backups`, next to the database)
 - Process: PM2 app `task-management` (port 4000); Apache reverse proxy + Certbot HTTPS in front
 
 ## Updating the live server from GitHub
