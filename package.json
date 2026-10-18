@@ -7,7 +7,8 @@
     "build": "npm --prefix frontend run build",
     "start": "npm --prefix backend run start",
     "backup": "npm --prefix backend run backup",
-    "reset-password": "npm --prefix backend run reset-password --"
+    "reset-password": "npm --prefix backend run reset-password --",
+    "deploy": "bash scripts/deploy.sh"
   },
   "engines": {
     "node": ">=24"

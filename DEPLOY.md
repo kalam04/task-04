@@ -179,6 +179,18 @@ database has none; changing them later doesn't change an existing password — u
 
 ## Updating to a new version
 
+**One command** (backs up, sets aside edits made on the server, pulls, installs, builds, restarts, checks):
+
+```bash
+cd /opt/task-management && npm run deploy
+```
+
+Or ask Claude Code on the server to do it: run `claude` in `/opt/task-management` and say *"update the live site
+from GitHub"* — it follows the instructions in `CLAUDE.md`.
+
+The manual steps, if you prefer:
+
+
 With GitHub (option A) — make a backup first, then update:
 
 ```bash
