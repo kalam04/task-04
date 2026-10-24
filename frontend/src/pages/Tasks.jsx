@@ -17,6 +17,8 @@ import ScheduleIcon from '@mui/icons-material/Schedule';
 import StopIcon from '@mui/icons-material/Stop';
 import ChecklistIcon from '@mui/icons-material/Checklist';
 import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown';
+import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
+import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import CheckIcon from '@mui/icons-material/Check';
 import ChatBubbleOutlineIcon from '@mui/icons-material/ChatBubbleOutlined';
 import PersonAddIcon from '@mui/icons-material/PersonAddAlt1';
@@ -470,6 +472,36 @@ export default function Tasks() {
     }
   };
 
+  // Manual order within a priority: the # restarts at 1 for each priority, and ▲▼ swap with the
+  // nearest task of the same priority that this user may also move (developers: their own tasks)
+  const canReorder = (t) => isAdmin || isStaff || (user.role === 'developer' && t.developer_id === user.id);
+  const serialOf = (index) => tasks.slice(0, index + 1).filter((x) => x.priority === tasks[index].priority).length;
+  const neighbour = (index, step) => {
+    const t = tasks[index];
+    if (!canReorder(t)) return null;
+    for (let i = index + step; i >= 0 && i < tasks.length; i += step) {
+      if (tasks[i].priority !== t.priority) return null;
+      if (canReorder(tasks[i])) return tasks[i];
+    }
+    return null;
+  };
+  const swap = async (a, b) => {
+    // Show the new order immediately, then save
+    setTasks((list) => {
+      const next = [...list];
+      const i = next.findIndex((x) => x.id === a.id);
+      const j = next.findIndex((x) => x.id === b.id);
+      [next[i], next[j]] = [next[j], next[i]];
+      return next;
+    });
+    try {
+      await api.post(`/tasks/${a.id}/swap/${b.id}`);
+    } catch (err) {
+      notify(errorMessage(err), 'error');
+    }
+    load();
+  };
+
   const assign = async (developer_id) => {
     try {
       await api.patch(`/tasks/${assigning.id}/assign`, { developer_id });
@@ -655,6 +687,7 @@ export default function Tasks() {
         <Table size="small" sx={{ '& th, & td': { whiteSpace: 'nowrap' } }}>
           <TableHead>
             <TableRow>
+              <TableCell sx={{ width: 56, pr: 0 }}>#</TableCell>
               <TableCell>Task</TableCell>
               <TableCell>Project / Client</TableCell>
               <TableCell>Developer</TableCell>
@@ -667,11 +700,29 @@ export default function Tasks() {
             </TableRow>
           </TableHead>
           <TableBody>
-            {tasks.map((t) => {
+            {tasks.map((t, index) => {
               const priority = byValue(PRIORITIES, t.priority);
+              const serial = serialOf(index);
+              const up = neighbour(index, -1);
+              const down = neighbour(index, 1);
               const status = byValue(STATUSES, t.status);
               return (
                 <TableRow key={t.id} hover sx={dueState(t)?.kind === 'overdue' ? { bgcolor: (th) => `${th.palette.error.main}0d` } : undefined}>
+                  <TableCell sx={{ pr: 0, verticalAlign: 'middle' }}>
+                    <Stack direction="row" sx={{ alignItems: 'center' }}>
+                      <Typography variant="body2" fontWeight={600} color="text.secondary" sx={{ minWidth: 18, textAlign: 'right' }}>{serial}</Typography>
+                      {canReorder(t) && (up || down) && (
+                        <Stack sx={{ ml: 0.25 }}>
+                          <Tooltip title={up ? 'Move up' : ''} placement="left">
+                            <span><IconButton size="small" sx={{ p: 0 }} disabled={!up} onClick={() => swap(t, up)}><KeyboardArrowUpIcon fontSize="small" /></IconButton></span>
+                          </Tooltip>
+                          <Tooltip title={down ? 'Move down' : ''} placement="left">
+                            <span><IconButton size="small" sx={{ p: 0 }} disabled={!down} onClick={() => swap(t, down)}><KeyboardArrowDownIcon fontSize="small" /></IconButton></span>
+                          </Tooltip>
+                        </Stack>
+                      )}
+                    </Stack>
+                  </TableCell>
                   <TableCell sx={{ minWidth: 200, maxWidth: 320, whiteSpace: 'normal !important' }}>
                     <Typography fontWeight={500} sx={{ cursor: 'pointer', '&:hover': { color: 'primary.main' } }}
                       onClick={() => setDetail({ id: t.id, tab: 'comments' })}>{t.title}</Typography>
@@ -748,7 +799,7 @@ export default function Tasks() {
               );
             })}
             {!tasks.length && (
-              <TableRow><TableCell colSpan={9} align="center" sx={{ py: 4, color: 'text.secondary' }}>No tasks found</TableCell></TableRow>
+              <TableRow><TableCell colSpan={10} align="center" sx={{ py: 4, color: 'text.secondary' }}>No tasks found</TableCell></TableRow>
             )}
           </TableBody>
         </Table>

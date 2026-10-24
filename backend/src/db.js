@@ -272,3 +272,26 @@ if (db.prepare('PRAGMA table_info(clients)').all().some((c) => c.name === 'proje
   const problems = db.prepare('PRAGMA foreign_key_check').all();
   if (problems.length) console.error('Foreign key problems after client migration:', problems);
 }
+
+// Manual order of tasks within the same priority ("position", unique and global; smaller = higher in the list)
+if (!db.prepare('PRAGMA table_info(tasks)').all().some((c) => c.name === 'position')) {
+  transaction(() => {
+    db.exec('ALTER TABLE tasks ADD COLUMN position INTEGER');
+    // Start from the order the list showed before
+    const ordered = db.prepare(`
+      SELECT id FROM tasks ORDER BY
+        CASE priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END,
+        CASE status WHEN 'in_progress' THEN 0 WHEN 'pending' THEN 1 WHEN 'rejected' THEN 2 ELSE 3 END,
+        due_date IS NULL, due_date, created_at DESC, id`).all();
+    const set = db.prepare('UPDATE tasks SET position = ? WHERE id = ?');
+    ordered.forEach((t, i) => set.run(i + 1, t.id));
+  });
+}
+// New tasks go to the bottom of their priority group
+db.exec(`
+  CREATE TRIGGER IF NOT EXISTS tasks_default_position AFTER INSERT ON tasks
+  WHEN NEW.position IS NULL
+  BEGIN
+    UPDATE tasks SET position = (SELECT COALESCE(MAX(position), 0) + 1 FROM tasks) WHERE id = NEW.id;
+  END;
+`);

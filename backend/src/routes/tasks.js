@@ -111,6 +111,7 @@ tasksRouter.get('/', (req, res) => {
   const { where, params } = buildFilters(req.query, { user: req.user });
   const sql = `${selectTask} WHERE ${where.join(' AND ')}
     ORDER BY CASE t.priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END,
+      t.position,
       CASE t.status WHEN 'in_progress' THEN 0 WHEN 'pending' THEN 1 WHEN 'rejected' THEN 2 ELSE 3 END,
       t.due_date IS NULL, t.due_date,
       t.created_at DESC`;
@@ -387,6 +388,25 @@ tasksRouter.patch('/:id/assign', (req, res) => {
   const updated = getTask(task.id);
   if (updated.developer_id !== task.developer_id) recordAssignment(req, task, updated);
   res.json(getTask(task.id));
+});
+
+// Rearrange: swap the places of two tasks with the same priority.
+// Admins and Marketing/Support can move any task; developers only between their own tasks.
+const canReorder = (user, task) => user.role === 'admin' || isStaff(user) || (user.role === 'developer' && task.developer_id === user.id);
+
+tasksRouter.post('/:id/swap/:otherId', (req, res) => {
+  const a = getTask(req.params.id);
+  const b = getTask(req.params.otherId);
+  if (!a || !b || !canSeeTask(req.user, a) || !canSeeTask(req.user, b)) return res.status(404).json({ message: 'Task not found' });
+  if (a.priority !== b.priority) return res.status(400).json({ message: 'Only tasks with the same priority can be rearranged' });
+  if (!canReorder(req.user, a) || !canReorder(req.user, b)) {
+    return res.status(403).json({ message: 'You can only rearrange your own tasks' });
+  }
+  transaction(() => {
+    db.prepare('UPDATE tasks SET position = ? WHERE id = ?').run(b.position, a.id);
+    db.prepare('UPDATE tasks SET position = ? WHERE id = ?').run(a.position, b.id);
+  });
+  res.json({ ok: true });
 });
 
 // Subtasks and time log live under /tasks/:taskId/...
