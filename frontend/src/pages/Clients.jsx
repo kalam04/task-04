@@ -10,6 +10,7 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import KeyIcon from '@mui/icons-material/Key';
 import { api } from '../api/client';
 import { errorMessage } from '../components/constants';
+import { useAuth } from '../context/AuthContext';
 import ConfirmDialog from '../components/ConfirmDialog';
 
 function ClientDialog({ open, client, projects, onClose, onSaved }) {
@@ -152,6 +153,9 @@ function PortalUsersDialog({ client, onClose, onChanged }) {
 }
 
 export default function Clients() {
+  // Marketing/Support can add and edit clients; deleting and portal logins stay with admins
+  const { user } = useAuth();
+  const isAdmin = user.role === 'admin';
   const [clients, setClients] = useState([]);
   const [projects, setProjects] = useState([]);
   const [dialog, setDialog] = useState(null); // { client? }
@@ -206,11 +210,15 @@ export default function Clients() {
                   {!c.projects.length && <Typography variant="body2" color="text.secondary">No projects</Typography>}
                 </TableCell>
                 <TableCell align="right">
-                  <Button size="small" startIcon={<KeyIcon />} onClick={() => setPortal(c)}>{c.portal_users || 'Add'}</Button>
+                  {isAdmin
+                    ? <Button size="small" startIcon={<KeyIcon />} onClick={() => setPortal(c)}>{c.portal_users || 'Add'}</Button>
+                    : <Typography variant="body2" color="text.secondary">{c.portal_users || '—'}</Typography>}
                 </TableCell>
                 <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
                   <Tooltip title="Edit"><IconButton size="small" onClick={() => setDialog({ client: c })}><EditIcon fontSize="small" /></IconButton></Tooltip>
-                  <Tooltip title="Delete"><IconButton size="small" color="error" onClick={() => setDeleting(c)}><DeleteIcon fontSize="small" /></IconButton></Tooltip>
+                  {isAdmin && (
+                    <Tooltip title="Delete"><IconButton size="small" color="error" onClick={() => setDeleting(c)}><DeleteIcon fontSize="small" /></IconButton></Tooltip>
+                  )}
                 </TableCell>
               </TableRow>
             ))}
@@ -220,9 +228,15 @@ export default function Clients() {
           </TableBody>
         </Table>
       </TableContainer>
-      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
-        You can also add clients to a project from <Link component={RouterLink} to="/projects">Projects &amp; Clients</Link>.
-      </Typography>
+      {isAdmin ? (
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
+          You can also add clients to a project from <Link component={RouterLink} to="/projects">Projects &amp; Clients</Link>.
+        </Typography>
+      ) : (
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
+          Ask an admin to delete a client or to create its portal logins.
+        </Typography>
+      )}
 
       <ClientDialog open={!!dialog} client={dialog?.client} projects={projects} onClose={() => setDialog(null)}
         onSaved={(message) => { setDialog(null); setToast({ message, severity: 'success' }); load(); }} />

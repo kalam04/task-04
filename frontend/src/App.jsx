@@ -44,7 +44,7 @@ export default function App() {
             <Route path="/projects" element={<ProtectedRoute adminOnly><Projects /></ProtectedRoute>} />
             <Route path="/developers" element={<ProtectedRoute adminOnly><Developers /></ProtectedRoute>} />
             <Route path="/trash" element={<ProtectedRoute adminOnly><Trash /></ProtectedRoute>} />
-            <Route path="/clients" element={<ProtectedRoute adminOnly><Clients /></ProtectedRoute>} />
+            <Route path="/clients" element={<ProtectedRoute roles={['admin', 'marketing', 'support']}><Clients /></ProtectedRoute>} />
             <Route path="/staff" element={<ProtectedRoute adminOnly><Staff /></ProtectedRoute>} />
             <Route path="/admins" element={<ProtectedRoute adminOnly><Admins /></ProtectedRoute>} />
             <Route path="/reports" element={<ProtectedRoute roles={['admin', 'marketing', 'support']}><Reports /></ProtectedRoute>} />

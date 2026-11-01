@@ -38,7 +38,10 @@ export default function Layout() {
   const links = [
     ...(user.role === 'developer' ? [{ to: '/dashboard', label: 'My Dashboard', icon: <DashboardIcon /> }] : []),
     { to: '/tasks', label: 'Tasks', icon: <AssignmentIcon /> },
-    ...(isStaffRole(user.role) ? [{ to: '/reports', label: 'Dashboard & Reports', icon: <InsightsIcon /> }] : []),
+    ...(isStaffRole(user.role) ? [
+      { to: '/reports', label: 'Dashboard & Reports', icon: <InsightsIcon /> },
+      { to: '/clients', label: 'Clients', icon: <BusinessIcon /> },
+    ] : []),
     ...(isAdmin ? [
       { to: '/reports', label: 'Dashboard & Reports', icon: <InsightsIcon /> },
       { to: '/projects', label: 'Projects & Clients', icon: <FolderIcon /> },

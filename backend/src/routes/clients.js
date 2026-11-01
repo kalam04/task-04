@@ -1,10 +1,11 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import { db, transaction } from '../db.js';
-import { requireAdmin } from '../auth.js';
+import { requireAdmin, requireAdminOrStaff } from '../auth.js';
 import { isClientUser } from '../access.js';
 
-// Clients are companies shared across projects (project_clients). Admins manage them and their portal logins.
+// Clients are companies shared across projects (project_clients). Admins and Marketing/Support create and edit
+// them; only admins delete them or manage their portal logins.
 export const clientsRouter = Router();
 
 const nowIso = () => new Date().toISOString();
@@ -53,7 +54,7 @@ function setProjects(clientId, projectIds) {
   for (const id of projectIds) link.run(id, clientId);
 }
 
-clientsRouter.post('/', requireAdmin, (req, res) => {
+clientsRouter.post('/', requireAdminOrStaff, (req, res) => {
   const c = readClient(req);
   if (c.error) return res.status(400).json({ message: c.error });
   if (duplicateName(c.name)) return res.status(409).json({ message: `A client named "${c.name}" already exists — add it to more projects instead` });
@@ -66,7 +67,7 @@ clientsRouter.post('/', requireAdmin, (req, res) => {
   res.status(201).json(withDetails(db.prepare('SELECT * FROM clients WHERE id = ?').get(id)));
 });
 
-clientsRouter.put('/:id', requireAdmin, (req, res) => {
+clientsRouter.put('/:id', requireAdminOrStaff, (req, res) => {
   const existing = db.prepare('SELECT id FROM clients WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
   if (!existing) return res.status(404).json({ message: 'Client not found' });
   const c = readClient(req);
