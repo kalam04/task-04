@@ -26,7 +26,8 @@ import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { PRIORITIES, STATUSES, byValue, dueState, errorMessage, formatDuration, formatEstimate, isStaffRole } from '../components/constants';
 import TaskDetailDialog from '../components/TaskDetailDialog';
-import { DeclineRequestDialog, RequestDeveloperDialog, respondToRequest } from '../components/Requests';
+import { DeclineRequestDialog, HandOverDialog, RequestDeveloperDialog, respondToRequest } from '../components/Requests';
+import PersonRemoveIcon from '@mui/icons-material/PersonRemove';
 import HowToRegIcon from '@mui/icons-material/HowToReg';
 import PersonSearchIcon from '@mui/icons-material/PersonSearch';
 import { FileDropZone, PendingFiles, formatBytes, uploadFiles } from '../components/Attachments';
@@ -365,6 +366,7 @@ export default function Tasks() {
   const [assigning, setAssigning] = useState(null);
   const [requesting, setRequesting] = useState(null);
   const [declining, setDeclining] = useState(null);
+  const [handingOver, setHandingOver] = useState(null);
   const [toast, setToast] = useState(null);
 
   const params = useMemo(() => Object.fromEntries(Object.entries(filters).filter(([, v]) => v)), [filters]);
@@ -588,6 +590,11 @@ export default function Tasks() {
         <Tooltip title="Edit"><IconButton size="small" onClick={() => { setEditing(t); setFormOpen(true); }}><EditIcon /></IconButton></Tooltip>
         <Tooltip title="Mark complete"><IconButton size="small" color="success" onClick={() => setCompleting(t)}><CheckCircleIcon /></IconButton></Tooltip>
         <Tooltip title="Reject"><IconButton size="small" color="error" onClick={() => setRejecting(t)}><CancelIcon /></IconButton></Tooltip>
+        {user.role === 'developer' && (
+          <Tooltip title="Hand over — unassign me and ask another developer">
+            <IconButton size="small" color="warning" onClick={() => setHandingOver(t)}><PersonRemoveIcon /></IconButton>
+          </Tooltip>
+        )}
       </Stack>
     );
   };
@@ -846,6 +853,8 @@ export default function Tasks() {
         onDone={(msg) => { setRequesting(null); notify(msg); load(); }} />
       <DeclineRequestDialog request={declining} onClose={() => setDeclining(null)}
         onConfirm={(reason) => { requestAction(declining, 'decline', reason); setDeclining(null); }} />
+      <HandOverDialog task={handingOver} developers={developers} userId={user.id} onClose={() => setHandingOver(null)}
+        onDone={(msg) => { setHandingOver(null); notify(msg); load(); }} />
       <TaskFormDialog open={formOpen} task={editing} projects={projects} developers={developers} isAdmin={isAdmin} isStaff={isStaff} isClient={isClient} userId={user.id}
         onClose={() => setFormOpen(false)} onSaved={(msg, severity) => { setFormOpen(false); notify(msg, severity); load(); }} />
       <CompleteDialog task={completing} onClose={() => setCompleting(null)}

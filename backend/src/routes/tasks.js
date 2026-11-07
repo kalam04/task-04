@@ -4,7 +4,7 @@ import { requireAdmin } from '../auth.js';
 import { taskDetailsRouter } from './taskDetails.js';
 import { startTimer, stopTimer } from './timer.js';
 import { PRIORITY_LABELS, STATUS_LABELS, adminIds, logActivity, notify } from '../activity.js';
-import { cancelPendingRequests, createRequest } from './requests.js';
+import { activeDeveloper, addRequest, cancelPendingRequests, createRequest } from './requests.js';
 import { canSeeTask, clientProjectIds, clientScope, clientUserIds, isClientUser } from '../access.js';
 
 export const tasksRouter = Router();
@@ -387,6 +387,42 @@ tasksRouter.patch('/:id/assign', (req, res) => {
   if (!changes) return res.status(409).json({ message: 'Someone else just assigned this task' });
   const updated = getTask(task.id);
   if (updated.developer_id !== task.developer_id) recordAssignment(req, task, updated);
+  res.json(getTask(task.id));
+});
+
+// Hand over: the assigned developer gives up an open task (it becomes unassigned) and can ask another
+// developer to take it — that developer accepts or declines like any other request.
+tasksRouter.post('/:id/release', (req, res) => {
+  const task = getTask(req.params.id);
+  if (!task) return res.status(404).json({ message: 'Task not found' });
+  if (req.user.role !== 'developer' || task.developer_id !== req.user.id) {
+    return res.status(403).json({ message: 'Only the assigned developer can hand over this task' });
+  }
+  if (!['pending', 'in_progress'].includes(task.status)) return res.status(400).json({ message: 'Only open tasks can be handed over' });
+  const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim().slice(0, 2000) : '';
+  if (!reason) return res.status(400).json({ message: 'Please give a reason for handing over' });
+  let next = null;
+  if (req.body?.developer_id) {
+    next = activeDeveloper(req.body.developer_id);
+    if (!next) return res.status(400).json({ message: 'Invalid developer' });
+    if (next.id === req.user.id) return res.status(400).json({ message: 'Choose another developer' });
+  }
+  const ok = transaction(() => {
+    // Guarded: only while it is still assigned to this developer
+    const { changes } = db.prepare(`UPDATE tasks SET developer_id = NULL, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ? AND developer_id = ? AND deleted_at IS NULL`).run(task.id, req.user.id);
+    if (!changes) return false;
+    if (stopTimer(task.id)) logActivity(task.id, req.user.id, 'stopped the timer');
+    logActivity(task.id, req.user.id, `handed over the task (unassigned themselves): "${reason}"`);
+    if (next) addRequest(req.user, task, next, reason, { handover: true });
+    return true;
+  });
+  if (!ok) return res.status(409).json({ message: 'This task is no longer assigned to you' });
+  const short = reason.length > 80 ? `${reason.slice(0, 80)}…` : reason;
+  notify([...adminIds(), task.created_by_role === 'client' ? null : task.created_by], {
+    taskId: task.id, actorId: req.user.id, type: 'handover',
+    message: `${req.user.name} handed over "${task.title}"${next ? ` and asked ${next.name} to take it` : ' — it is now unassigned'}: ${short}`,
+  });
   res.json(getTask(task.id));
 });
 

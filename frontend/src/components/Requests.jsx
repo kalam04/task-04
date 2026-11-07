@@ -44,6 +44,57 @@ export function RequestDeveloperDialog({ task, developers, onClose, onDone }) {
   );
 }
 
+// The assigned developer gives up a task: it becomes unassigned, and optionally another developer
+// is asked to take it (they accept or decline like any request)
+export function HandOverDialog({ task, developers, userId, onClose, onDone }) {
+  const [developerId, setDeveloperId] = useState('');
+  const [reason, setReason] = useState('');
+  const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
+  useEffect(() => { setDeveloperId(''); setReason(''); setError(''); setSaving(false); }, [task]);
+  const others = developers.filter((d) => d.id !== userId);
+  const next = others.find((d) => d.id === developerId);
+
+  const send = async () => {
+    setSaving(true);
+    try {
+      await api.post(`/tasks/${task.id}/release`, { developer_id: developerId || null, reason });
+      onDone(next ? `Task handed over — ${next.name} has been asked to take it` : 'Task handed over — it is now unassigned');
+    } catch (err) {
+      setError(errorMessage(err));
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open={!!task} onClose={onClose} fullWidth maxWidth="xs">
+      <DialogTitle>Hand over task</DialogTitle>
+      <DialogContent>
+        <Typography variant="body2" sx={{ mb: 2 }}>{task?.title}</Typography>
+        {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+        <Stack spacing={2}>
+          <TextField select label="Ask another developer to take it" value={developerId}
+            onChange={(e) => setDeveloperId(e.target.value)}
+            helperText={next ? `${next.name} can accept or decline` : 'The task becomes unassigned so anyone can pick it up'}>
+            <MenuItem value=""><em>No one — just leave it unassigned</em></MenuItem>
+            {others.map((d) => <MenuItem key={d.id} value={d.id}>{d.name} ({d.username})</MenuItem>)}
+          </TextField>
+          <TextField label="Reason" required multiline minRows={3} autoFocus value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder={next ? `e.g. I'm on leave this week, ${next.name} knows this module` : 'e.g. Too busy with urgent tasks this week'} />
+          {task?.running_since && <Alert severity="info">Your running timer on this task will be stopped.</Alert>}
+        </Stack>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose}>Cancel</Button>
+        <Button variant="contained" color="warning" disabled={!reason.trim() || saving} onClick={send}>
+          {next ? 'Hand over & send request' : 'Unassign me'}
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+}
+
 export function DeclineRequestDialog({ request, onClose, onConfirm }) {
   const [reason, setReason] = useState('');
   useEffect(() => setReason(''), [request]);

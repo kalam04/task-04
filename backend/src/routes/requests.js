@@ -3,8 +3,8 @@ import { db, transaction } from '../db.js';
 import { adminIds, logActivity, notify } from '../activity.js';
 import { getTask, isStaff } from './tasks.js';
 
-// Assignment requests: Marketing/Support (or an admin) ask a developer to take an unassigned task;
-// the developer accepts (the task is assigned to them) or declines with a reason.
+// Assignment requests: Marketing/Support (or an admin) ask a developer to take an unassigned task,
+// or a developer handing over their own task asks a colleague to take it; the developer accepts (the task is assigned to them) or declines with a reason.
 export const requestsRouter = Router();
 
 const nowIso = () => new Date().toISOString();
@@ -15,18 +15,29 @@ export function createRequest(user, task, developerId, message) {
   if (task.developer_id) return { error: 'This task is already assigned' };
   if (!['pending', 'in_progress'].includes(task.status)) return { error: 'Only open tasks can be requested' };
   if (task.request_id) return { error: `A request to ${task.request_developer_name} is already pending` };
-  const dev = db.prepare(`SELECT id, name FROM users WHERE id = ? AND role = 'developer' AND deleted_at IS NULL`).get(developerId);
+  const dev = activeDeveloper(developerId);
   if (!dev) return { error: 'Choose a developer' };
+  return { id: addRequest(user, task, dev, message) };
+}
+
+export const activeDeveloper = (id) =>
+  db.prepare(`SELECT id, name FROM users WHERE id = ? AND role = 'developer' AND deleted_at IS NULL`).get(id);
+
+// Inserts a pending request (no permission checks — callers do those), logs it and tells the developer
+export function addRequest(user, task, dev, message, { handover = false } = {}) {
   const note = typeof message === 'string' ? message.trim().slice(0, 2000) || null : null;
   const { lastInsertRowid } = db.prepare(`
     INSERT INTO assignment_requests (task_id, developer_id, requested_by, message, created_at) VALUES (?, ?, ?, ?, ?)`
   ).run(task.id, dev.id, user.id, note, nowIso());
   logActivity(task.id, user.id, `asked ${dev.name} to take the task${note ? `: "${note}"` : ''}`);
+  const short = note ? `: ${note.length > 80 ? `${note.slice(0, 80)}…` : note}` : '';
   notify([dev.id], {
     taskId: task.id, actorId: user.id, type: 'request',
-    message: `${user.name} asked you to take "${task.title}"${note ? `: ${note.length > 80 ? `${note.slice(0, 80)}…` : note}` : ''}`,
+    message: handover
+      ? `${user.name} handed over "${task.title}" and asked you to take it${short}`
+      : `${user.name} asked you to take "${task.title}"${short}`,
   });
-  return { id: lastInsertRowid };
+  return lastInsertRowid;
 }
 
 // Called when a task gets assigned some other way
